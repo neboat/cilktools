@@ -1,5 +1,7 @@
 # -*- mode: makefile-gmake; -*-
 
+COMPILER ?= LLVM
+
 COMPILERS_HOME = $(HOME)/compilers
 CC = gcc
 CXX = g++
@@ -12,7 +14,7 @@ LDFLAGS=-fcilkplus
 LDLIBS=-g
 
 ifeq ($(COMPILER),LLVM)
-COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilkok
+COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilk-ok
 CC = $(COMPILER_ROOT)/bin/clang
 CXX = $(COMPILER_ROOT)/bin/clang++
 TOOLFLAGS += -fcilkplus

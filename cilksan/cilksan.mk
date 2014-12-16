@@ -8,7 +8,7 @@ LIB_CFLAGS += -fPIC
 LIB_CXXFLAGS += $(LIB_CFLAGS)
 
 ifeq ($(COMPILER),LLVM)
-COMPILER_RT_DIR=$(COMPILER_ROOT)-src/projects/compiler-rt
+COMPILER_RT_DIR=$(COMPILER_ROOT)/src/projects/compiler-rt
 LIB_CFLAGS += -I$(COMPILER_RT_DIR)/lib/ -I$(COMPILER_RT_DIR)/lib/cilk/include
 LIB_CXXFLAGS += $(LIB_CFLAGS)
 # else ifeq ($(COMPILER),GCC)
