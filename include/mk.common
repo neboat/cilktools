@@ -1,0 +1,67 @@
+# -*- mode: makefile-gmake; -*-
+
+COMPILERS_HOME = $(HOME)/compilers
+CC = gcc
+CXX = g++
+BASIC_CFLAGS = -O1 -Wall -g
+BASIC_CXXFLAGS=$(BASIC_CFLAGS)
+TOOLFLAGS = -I../include/
+CFLAGS=$(BASIC_CFLAGS) -std=c11 $(TOOLFLAGS)
+CXXFLAGS=$(BASIC_CXXFLAGS) -std=c++11 $(TOOLFLAGS)
+LDFLAGS=-fcilkplus
+LDLIBS=-g
+
+ifeq ($(COMPILER),LLVM)
+COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilkok
+CC = $(COMPILER_ROOT)/bin/clang
+CXX = $(COMPILER_ROOT)/bin/clang++
+TOOLFLAGS += -fcilkplus
+else ifeq ($(COMPILER), GCC)
+COMPILER_ROOT = $(COMPILERS_HOME)/gcc-supertech
+CC = $(COMPILER_ROOT)/bin/gcc
+CXX = $(COMPILER_ROOT)/bin/g++
+TOOLFLAGS += -fcilkplus -fcilktool
+endif
+
+.PHONY : default clean
+
+default : $(TARGETS)
+
+# Each C source file will have a corresponding file of prerequisites.
+# Include the prerequisites for each of our C source files.
+-include $(OBJ:.o=.d)
+
+# This rule generates a file of prerequisites (i.e., a makefile)
+# called name.d from a C source file name.c.
+%.d : CFLAGS += -MM -MP
+%.d : %.c
+	@set -e; rm -f $@; \
+	$(CC) $(CFLAGS) -MF $@.$$$$ $<; \
+	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
+	rm -f $@.$$$$
+
+# This rule generates a file of prerequisites (i.e., a makefile)
+# called name.d from a CPP source file name.cpp.
+%.d : CXXFLAGS += -MM -MP
+%.d : %.cpp
+	@set -e; rm -f $@; \
+	$(CXX) $(CXXFLAGS) -MF $@.$$$$ $<; \
+	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
+	rm -f $@.$$$$
+
+# This rule generates a file of prerequisites (i.e., a makefile)
+# called name.d from a CPP source file name.cc.
+%.d : %.cc
+	@set -e; rm -f $@; \
+	$(CXX) $(CXXFLAGS) -MF $@.$$$$ $<; \
+	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
+	rm -f $@.$$$$
+
+%.o : %.c
+	$(CC) $(CFLAGS) $(LDFLAGS) $(LDLIBS) -c $<
+
+%.o : %.cpp
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(LDLIBS) -c $<
+
+%.o : %.cc
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(LDLIBS) -c $<
