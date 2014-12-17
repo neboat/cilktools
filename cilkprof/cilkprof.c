@@ -20,7 +20,7 @@
 #include <cilktool.h>
 #include "cilkprof_stack.h"
 
-#define SERIAL_TOOL 0
+#define SERIAL_TOOL 1
 
 #if !SERIAL_TOOL
 #include "cilkprof_stack_reducer.h"
@@ -40,7 +40,7 @@ CILK_C_DECLARE_REDUCER(cilkprof_stack_t) ctx_stack =
 		      reduce_cilkprof_stack,
 		      identity_cilkprof_stack,
 		      destroy_cilkprof_stack,
-		      NULL);
+		      {NULL});
 #endif
 
 bool TOOL_INITIALIZED = false;
@@ -72,15 +72,16 @@ mapping_list_t maps = { .head = NULL, .tail = NULL };
  */
 
 // Store the current "time" into TIMER.
-inline void gettime(struct timespec *timer) {
+static inline void gettime(struct timespec *timer) {
   // TB 2014-08-01: This is the "clock_gettime" variant I could get
   // working with -std=c11.  I want to use TIME_MONOTONIC instead, but
   // it does not appear to be supported on my system.
-  timespec_get(timer, TIME_UTC);
+  // timespec_get(timer, TIME_UTC);
+  clock_gettime(CLOCK_MONOTONIC, timer);
 }
 
 // Get the number of nanoseconds elapsed between STOP and START.
-inline uint64_t elapsed_nsec(const struct timespec *stop,
+static inline uint64_t elapsed_nsec(const struct timespec *stop,
 			     const struct timespec *start) {
   return (uint64_t)(stop->tv_sec - start->tv_sec) * 1000000000ll
     + (stop->tv_nsec - start->tv_nsec);
@@ -180,7 +181,15 @@ void cilk_tool_init(void) {
 
   // This is a serial tool
 #if SERIAL_TOOL
-  assert(1 == __cilkrts_get_nworkers());
+  // assert(1 == __cilkrts_get_nworkers());
+  char *e = getenv("CILK_NWORKERS");
+  if (!e || 0!=strcmp(e, "1")) {
+    // fprintf(err_io, "Setting CILK_NWORKERS to be 1\n");
+    if( setenv("CILK_NWORKERS", "1", 1) ) {
+      fprintf(stderr, "Error setting CILK_NWORKERS to be 1\n");
+      exit(1);
+    }
+  }
 
   cilkprof_stack_init(&ctx_stack, MAIN);
 

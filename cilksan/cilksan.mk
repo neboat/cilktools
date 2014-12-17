@@ -1,4 +1,4 @@
-TARGETS := libcilksan.so
+TARGETS := libcilksan.so libcilksan.a
 SRC := cilksan.cpp debug_util.cpp mem_access.cpp driver.cpp print_addr.cpp
 OBJ := $(SRC:.cpp=.o)
 
@@ -25,5 +25,8 @@ CXXFLAGS += $(LIB_CXXFLAGS)
 libcilksan.so: $(OBJ)
 	$(CXX) $^ -shared -o $@
 
+libcilksan.a: $(OBJ)
+	ar rcs $@ $^ 
+
 clean :
-	rm -rf *.o *.d* *.so *~
+	rm -rf *.o *.d* *.so *.a *~

@@ -1,4 +1,4 @@
-#ifndef INCLDUED_CC_HASHTABLE_H
+#ifndef INCLUDED_CC_HASHTABLE_H
 #define INCLUDED_CC_HASHTABLE_H
 
 #include <stdio.h>
