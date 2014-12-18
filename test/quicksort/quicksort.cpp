@@ -7,6 +7,8 @@
 #include <cilk/cilk.h>
 #include <cilk/cilk_api.h>
 
+#include <cilktool.h>
+
 #define COARSENING 32
 
 ///////////////////////////////////////////////////////////////////////////
@@ -131,6 +133,7 @@ int main(int argc, char* argv[])
     }
   }
   
+  // cilk_tool_init();
 
   srand(733);
 
@@ -156,6 +159,8 @@ int main(int argc, char* argv[])
   }
 
   printf("quicksort(%lu): %0.3f\n", n, (end-start) * 1.0e-3);
+  cilk_tool_print();
+  // cilk_tool_destroy();
 
   return 0;
 }
