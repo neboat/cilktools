@@ -362,8 +362,15 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* rip)
     // This is not exactly the same as what cilk_tool_init() does.
 #if SERIAL_TOOL
     // Assert that this tool is run serially
-    assert(1 == __cilkrts_get_nworkers());
-
+    // assert(1 == __cilkrts_get_nworkers());
+    char *e = getenv("CILK_NWORKERS");
+    if (!e || 0!=strcmp(e, "1")) {
+      // fprintf(err_io, "Setting CILK_NWORKERS to be 1\n");
+      if( setenv("CILK_NWORKERS", "1", 1) ) {
+        fprintf(stderr, "Error setting CILK_NWORKERS to be 1\n");
+        exit(1);
+      }
+    }
     cilkprof_stack_init(&ctx_stack, MAIN);
 
     stack = &ctx_stack;
@@ -426,6 +433,14 @@ void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
 
   /* stack->bot->rip = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0)); */
   stack->bot->rip = (uintptr_t)__builtin_extract_return_addr(rip);
+}
+
+void cilk_tool_c_function_enter(void *rip) {
+  fprintf(stderr, "C function enter %p.\n", rip);
+}
+
+void cilk_tool_c_function_leave(void *rip) {
+  fprintf(stderr, "C function leave %p.\n", rip);
 }
 
 
