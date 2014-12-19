@@ -8,21 +8,22 @@ CXX = g++
 BASIC_CFLAGS = -O1 -Wall -g
 BASIC_CXXFLAGS=$(BASIC_CFLAGS)
 TOOLFLAGS = -I../include/
-CFLAGS=$(BASIC_CFLAGS) -std=c11 $(TOOLFLAGS)
-CXXFLAGS=$(BASIC_CXXFLAGS) -std=c++11 $(TOOLFLAGS)
-LDFLAGS=-fcilkplus
-LDLIBS=-g
+APPFLAGS = -fcilkplus -g
+CFLAGS=$(BASIC_CFLAGS) -std=gnu11 $(TOOLFLAGS)
+CXXFLAGS=$(BASIC_CXXFLAGS) -std=gnu++11 $(TOOLFLAGS)
+#LDFLAGS=-fcilkplus
+#LDLIBS=-g
 
 ifeq ($(COMPILER),LLVM)
 COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilk-ok
 CC = $(COMPILER_ROOT)/bin/clang
 CXX = $(COMPILER_ROOT)/bin/clang++
-TOOLFLAGS += -fcilkplus
-else ifeq ($(COMPILER), GCC)
+LDFLAGS += -ldl
+else ifeq ($(COMPILER),GCC)
 COMPILER_ROOT = $(COMPILERS_HOME)/gcc-supertech
 CC = $(COMPILER_ROOT)/bin/gcc
 CXX = $(COMPILER_ROOT)/bin/g++
-TOOLFLAGS += -fcilkplus -fcilktool
+APPFLAGS += -fcilktool
 endif
 
 .PHONY : default clean
@@ -60,10 +61,13 @@ default : $(TARGETS)
 	rm -f $@.$$$$
 
 %.o : %.c
-	$(CC) $(CFLAGS) $(LDFLAGS) $(LDLIBS) -c $<
+	$(CC) $(CFLAGS) -c $<
 
 %.o : %.cpp
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(LDLIBS) -c $<
+	$(CXX) $(CXXFLAGS) -c $<
 
 %.o : %.cc
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(LDLIBS) -c $<
+	$(CXX) $(CXXFLAGS) -c $<
+
+%_% :
+	$(CC) $(CFLAGS) $(LDFLAGS) $(LDLIBS) $^ -o $@
