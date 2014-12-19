@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <time.h>
-#define _POSIX_C_SOURCE 200112L
+/* #define _POSIX_C_SOURCE 200112L */
 
 /* Enum for types of functions */
 typedef enum {
