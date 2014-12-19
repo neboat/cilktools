@@ -94,6 +94,22 @@ static inline uint64_t elapsed_nsec(const struct timespec *stop,
     + (stop->tv_nsec - start->tv_nsec);
 }
 
+#if SERIAL_TOOL
+// Ensure that this tool is run serially
+static inline void ensure_serial_tool(void) {
+  // assert(1 == __cilkrts_get_nworkers());
+  fprintf(stderr, "Forcing CILK_NWORKERS=1.\n");
+  char *e = getenv("CILK_NWORKERS");
+  if (!e || 0!=strcmp(e, "1")) {
+    // fprintf(err_io, "Setting CILK_NWORKERS to be 1\n");
+    if( setenv("CILK_NWORKERS", "1", 1) ) {
+      fprintf(stderr, "Error setting CILK_NWORKERS to be 1\n");
+      exit(1);
+    }
+  }
+}
+#endif
+
 // Arch-dependent method for translating a RIP into a call site
 static uintptr_t rip2cc(uintptr_t rip) {
   return rip - 5;
@@ -190,15 +206,7 @@ void cilk_tool_init(void) {
 
   // This is a serial tool
 #if SERIAL_TOOL
-  // assert(1 == __cilkrts_get_nworkers());
-  char *e = getenv("CILK_NWORKERS");
-  if (!e || 0!=strcmp(e, "1")) {
-    // fprintf(err_io, "Setting CILK_NWORKERS to be 1\n");
-    if( setenv("CILK_NWORKERS", "1", 1) ) {
-      fprintf(stderr, "Error setting CILK_NWORKERS to be 1\n");
-      exit(1);
-    }
-  }
+  ensure_serial_tool();
 
   cilkprof_stack_init(&ctx_stack, MAIN);
 
@@ -375,16 +383,8 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* rip)
   if (!TOOL_INITIALIZED) {
     // This is not exactly the same as what cilk_tool_init() does.
 #if SERIAL_TOOL
-    // Assert that this tool is run serially
-    // assert(1 == __cilkrts_get_nworkers());
-    char *e = getenv("CILK_NWORKERS");
-    if (!e || 0!=strcmp(e, "1")) {
-      // fprintf(err_io, "Setting CILK_NWORKERS to be 1\n");
-      if( setenv("CILK_NWORKERS", "1", 1) ) {
-        fprintf(stderr, "Error setting CILK_NWORKERS to be 1\n");
-        exit(1);
-      }
-    }
+    ensure_serial_tool();
+
     cilkprof_stack_init(&ctx_stack, MAIN);
 
     stack = &ctx_stack;
