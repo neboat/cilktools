@@ -39,7 +39,7 @@ CILK_C_DECLARE_REDUCER(context_stack_t) ctx_stack =
 		      reduce_context_stack,
 		      identity_context_stack,
 		      destroy_context_stack,
-		      NULL);
+		      {NULL});
 #endif
 
 bool TOOL_INITIALIZED = false;
@@ -63,6 +63,8 @@ static inline void gettime(struct timespec *timer) {
   clock_gettime(CLOCK_MONOTONIC, timer);
 }
 
+#if SERIAL_TOOL
+// Ensure that this tool is run serially
 static inline void ensure_serial_tool(void) {
   // assert(1 == __cilkrts_get_nworkers());
   fprintf(stderr, "Forcing CILK_NWORKERS=1.\n");
@@ -75,6 +77,7 @@ static inline void ensure_serial_tool(void) {
     }
   }
 }
+#endif
 
 void cilk_tool_init(void) {
 #if TRACE_CALLS
