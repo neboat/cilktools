@@ -4,6 +4,7 @@
 /* #define _POSIX_C_SOURCE 200112L */
 #include <stdbool.h>
 #include <inttypes.h>
+#include <string.h>
 #include <assert.h>
 
 /* #include <cilk/common.h> */
@@ -11,10 +12,16 @@
 
 #include <cilktool.h>
 
-/* #include <cilk/reducer.h> */
-
 #include "context_stack.h"
-/* #include "context_stack_reducer.h" */
+
+#ifndef SERIAL_TOOL
+#define SERIAL_TOOL 1
+#endif
+
+#if !SERIAL_TOOL
+#include <cilk/reducer.h>
+#include "context_stack_reducer.h"
+#endif
 
 #ifndef TRACE_CALLS
 #define TRACE_CALLS 0
@@ -24,15 +31,16 @@
 /**
  * Data structures for tracking work and span.
  */
-
-/* CILK_C_DECLARE_REDUCER(context_stack_t) ctx_stack = */
-/*   CILK_C_INIT_REDUCER(context_stack_t, */
-/* 		      reduce_context_stack, */
-/* 		      identity_context_stack, */
-/* 		      destroy_context_stack, */
-/* 		      NULL); */
-
+#if SERIAL_TOOL
 context_stack_t ctx_stack;
+#else
+CILK_C_DECLARE_REDUCER(context_stack_t) ctx_stack =
+  CILK_C_INIT_REDUCER(context_stack_t,
+		      reduce_context_stack,
+		      identity_context_stack,
+		      destroy_context_stack,
+		      NULL);
+#endif
 
 bool TOOL_INITIALIZED = false;
 
@@ -55,23 +63,43 @@ static inline void gettime(struct timespec *timer) {
   clock_gettime(CLOCK_MONOTONIC, timer);
 }
 
+static inline void ensure_serial_tool(void) {
+  // assert(1 == __cilkrts_get_nworkers());
+  fprintf(stderr, "Forcing CILK_NWORKERS=1.\n");
+  char *e = getenv("CILK_NWORKERS");
+  if (!e || 0!=strcmp(e, "1")) {
+    // fprintf(err_io, "Setting CILK_NWORKERS to be 1\n");
+    if( setenv("CILK_NWORKERS", "1", 1) ) {
+      fprintf(stderr, "Error setting CILK_NWORKERS to be 1\n");
+      exit(1);
+    }
+  }
+}
+
 void cilk_tool_init(void) {
 #if TRACE_CALLS
   fprintf(stderr, "cilk_tool_init()\n");
 #endif
 
-  /* context_stack_init(&(REDUCER_VIEW(ctx_stack)), MAIN); */
-  context_stack_init(&ctx_stack, MAIN);
-  
-  /* CILK_C_REGISTER_REDUCER(ctx_stack); */
+#if SERIAL_TOOL
+  ensure_serial_tool();
 
-  /* REDUCER_VIEW(ctx_stack).in_user_code = true; */
-  /* gettime(&(REDUCER_VIEW(ctx_stack).start)); */
+  context_stack_init(&ctx_stack, MAIN);
+
   ctx_stack.in_user_code = true;
+
   gettime(&(ctx_stack.start));
+#else
+  context_stack_init(&(REDUCER_VIEW(ctx_stack)), MAIN);
+
+  CILK_C_REGISTER_REDUCER(ctx_stack);
+
+  REDUCER_VIEW(ctx_stack).in_user_code = true;
+
+  gettime(&(REDUCER_VIEW(ctx_stack).start));
+#endif
 
   TOOL_INITIALIZED = true;
-  assert(ctx_stack.in_user_code);
 }
 
 void cilk_tool_destroy(void) {
@@ -85,15 +113,18 @@ void cilk_tool_destroy(void) {
 void cilk_tool_print(void) {
 
   assert(TOOL_INITIALIZED);
-  /* assert(MAIN == REDUCER_VIEW(ctx_stack).bot->func_type); */
-  /* assert(NULL != REDUCER_VIEW(ctx_stack).bot); */
-
-  /* uint64_t span = REDUCER_VIEW(ctx_stack).bot->prefix_spn + REDUCER_VIEW(ctx_stack).bot->contin_spn; */
-  /* uint64_t work = REDUCER_VIEW(ctx_stack).running_wrk; */
+#if SERIAL_TOOL
   assert(NULL != ctx_stack.bot);
 
   uint64_t span = ctx_stack.bot->prefix_spn + ctx_stack.bot->contin_spn;
   uint64_t work = ctx_stack.running_wrk;
+#else
+  assert(MAIN == REDUCER_VIEW(ctx_stack).bot->func_type);
+  assert(NULL != REDUCER_VIEW(ctx_stack).bot);
+
+  uint64_t span = REDUCER_VIEW(ctx_stack).bot->prefix_spn + REDUCER_VIEW(ctx_stack).bot->contin_spn;
+  uint64_t work = REDUCER_VIEW(ctx_stack).running_wrk;
+#endif
 
   fprintf(stderr, "work = %fs, span = %fs, parallelism = %f\n",
 	  work / (1000000000.0),
@@ -118,22 +149,29 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void *rip)
 
   if (!TOOL_INITIALIZED) {
     /* cilk_tool_init(); */
-    /* context_stack_init(&(REDUCER_VIEW(ctx_stack)), MAIN); */
-  
-    /* CILK_C_REGISTER_REDUCER(ctx_stack); */
-
-    /* stack = &(REDUCER_VIEW(ctx_stack)); */
+#if SERIAL_TOOL
+    ensure_serial_tool();
     context_stack_init(&(ctx_stack), MAIN);
 
     stack = &(ctx_stack);
+#else
+    context_stack_init(&(REDUCER_VIEW(ctx_stack)), MAIN);
+  
+    CILK_C_REGISTER_REDUCER(ctx_stack);
 
+    stack = &(REDUCER_VIEW(ctx_stack));
+#endif
     /* stack->in_user_code = true; */
     /* gettime(&(stack->start)); */
 
     TOOL_INITIALIZED = true;
 
   } else {
+#if SERIAL_TOOL
     stack = &(ctx_stack);
+#else
+    stack = &(REDUCER_VIEW(ctx_stack));
+#endif
     gettime(&(stack->stop));
 
     assert(NULL != stack->bot);
@@ -166,7 +204,13 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void *rip)
 
 void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
 {
-  context_stack_t *stack = &(ctx_stack);
+  context_stack_t *stack;
+#if SERIAL_TOOL
+  stack = &(ctx_stack);
+#else
+  stack = &(REDUCER_VIEW(ctx_stack));
+#endif
+
 #if TRACE_CALLS
   fprintf(stderr, "cilk_enter_helper_begin(%p, %p)\n", sf, rip);
 #endif
@@ -181,7 +225,13 @@ void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
 
 void cilk_enter_end(__cilkrts_stack_frame *sf, void *rsp)
 {
-  context_stack_t *stack = &(ctx_stack);
+  context_stack_t *stack;
+#if SERIAL_TOOL
+  stack = &(ctx_stack);
+#else
+  stack = &(REDUCER_VIEW(ctx_stack));
+#endif
+
   /* fprintf(stderr, "cilk_enter_end(%p)\n", sf); */
   /* if (attributes & 0x4) { */
   /*   fprintf(stderr, "AFTER ENTER_SPAWN_HELPER\n"); */
@@ -223,7 +273,12 @@ void cilk_spawn_prepare(__cilkrts_stack_frame *sf)
   fprintf(stderr, "cilk_spawn_prepare(%p)\n", sf);
 #endif
   if (TOOL_INITIALIZED) {
+#if SERIAL_TOOL
     stack = &(ctx_stack);
+#else
+    stack = &(REDUCER_VIEW(ctx_stack));
+#endif
+
     gettime(&(stack->stop));
 
     uint64_t strand_time = elapsed_nsec(&(stack->stop), &(stack->start));
@@ -243,7 +298,12 @@ void cilk_spawn_or_continue(int in_continuation)
     fprintf(stderr, "cilk_spawn_or_continue() from continuation\n");
 #endif
 
-    context_stack_t *stack = &(ctx_stack);
+    context_stack_t *stack;
+#if SERIAL_TOOL
+    stack = &(ctx_stack);
+#else
+    stack = &(REDUCER_VIEW(ctx_stack));
+#endif
     assert(!(stack->in_user_code));
     stack->in_user_code = true;
     gettime(&(stack->start));
@@ -273,7 +333,12 @@ void cilk_detach_end(void)
 
 void cilk_sync_begin(__cilkrts_stack_frame *sf)
 {
-  context_stack_t *stack = &(ctx_stack);
+  context_stack_t *stack;
+#if SERIAL_TOOL
+  stack = &(ctx_stack);
+#else
+  stack = &(REDUCER_VIEW(ctx_stack));
+#endif
   gettime(&(stack->stop));
 
   if (SPAWN == stack->bot->func_type) {
@@ -295,7 +360,12 @@ void cilk_sync_begin(__cilkrts_stack_frame *sf)
 
 void cilk_sync_end(__cilkrts_stack_frame *sf)
 {
-  context_stack_t *stack = &(ctx_stack);
+  context_stack_t *stack;
+#if SERIAL_TOOL
+  stack = &(ctx_stack);
+#else
+  stack = &(REDUCER_VIEW(ctx_stack));
+#endif
 
   if (stack->bot->lchild_spn > stack->bot->contin_spn) {
     stack->bot->prefix_spn += stack->bot->lchild_spn;
@@ -321,7 +391,13 @@ void cilk_sync_end(__cilkrts_stack_frame *sf)
 
 void cilk_leave_begin(__cilkrts_stack_frame *sf)
 {
-  context_stack_t *stack = &(ctx_stack);
+  context_stack_t *stack;
+#if SERIAL_TOOL
+  stack = &(ctx_stack);
+#else
+  stack = &(REDUCER_VIEW(ctx_stack));
+#endif
+
   context_stack_frame_t *old_bottom;
   
   gettime(&(stack->stop));
@@ -371,7 +447,12 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 
 void cilk_leave_end(void)
 {
-  context_stack_t *stack = &(ctx_stack);
+  context_stack_t *stack;
+#if SERIAL_TOOL
+  stack = &(ctx_stack);
+#else
+  stack = &(REDUCER_VIEW(ctx_stack));
+#endif
 
   /* struct context_stack_el *old_bottom = ctx_stack; */
 
