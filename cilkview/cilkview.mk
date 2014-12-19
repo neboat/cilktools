@@ -11,11 +11,13 @@ cilkview.o : # CFLAGS += -flto
 cilkview.o : # LDFLAGS += -lrt
 
 %_cv : LDFLAGS += -lrt
+%_cv : %.o cilkview.o
 
 cilkview_perf.o : # CFLAGS += -flto
 cilkview_perf.o : # LDFLAGS += -lrt -lpfm
 
 %_cvp : LDFLAGS += -lrt -lpfm
+%_cvp : %.o cilkview_perf.o
 
 clean :
 	rm -f *~ *.o
