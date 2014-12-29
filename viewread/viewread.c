@@ -165,10 +165,10 @@ void cilk_spawn_prepare(__cilkrts_stack_frame *sf)
 #endif
   if (!TOOL_INITIALIZED) {
     initialize_tool(&ctx_stack);
+  } else {
+    assert(ctx_stack.in_user_code);
   }
   stack = &ctx_stack;
-  
-  assert(stack->in_user_code);
   stack->in_user_code = false;
 }
 
@@ -347,9 +347,26 @@ void cilk_leave_end(void)
   stack->in_user_code = true;
 }
 
-void cilk_set_reducer(void *reducer, void *rip) {
+void cilk_begin_reduce_strand(void) {
+  return;
+}
+
+void cilk_end_reduce_strand(void) {
+  return;
+}
+
+void cilk_begin_update_strand(void) {
+  return;
+}
+
+void cilk_end_update_strand(void) {
+  return;
+}
+
+void cilk_set_reducer(void *reducer, void *rip, const char *function, int line) {
   if (!TOOL_INITIALIZED) {
     initialize_tool(&ctx_stack);
+    ctx_stack.in_user_code = true;
   }
 
   viewread_stack_t *stack = &ctx_stack;
@@ -368,11 +385,11 @@ void cilk_read_reducer(void *reducer, void *rip, const char *function, int line)
             (void*)(last_reader->reader), rip, function, line);
   } else {
     if (SS == rep->type) {
-      fprintf(stderr, "Safe read; rep %p\n", rep);
+      /* fprintf(stderr, "Safe read; rep %p\n", rep); */
       assert(stack->bot->ancestor_spawns + stack->bot->local_spawns == last_reader->spawns);
     } else {
-      fprintf(stderr, "spawn counts are both %lx\n",
-              stack->bot->ancestor_spawns + stack->bot->local_spawns);
+      /* fprintf(stderr, "spawn counts are both %lx\n", */
+      /*         stack->bot->ancestor_spawns + stack->bot->local_spawns); */
     }
   }
   update_shadowmem(&memory, (reducer_t)reducer, (uintptr_t)rip,
