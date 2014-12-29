@@ -26,18 +26,12 @@
 #include <stdio.h>
 
 // #include <cilksan.h>
-
-extern "C" {
-void cilk_set_reducer(void *reducer, void *rip);
-void cilk_read_reducer(void *reducer, void *rip, const char *function, int line);
-}
-
+#include <reducertool.h>
+ 
 cilk::reducer< cilk::op_add<int> > result_x(0);
 
 void fib(int n) {
-  fprintf(stderr, "fib(%d)\n", n);
     if (n < 2) { 
-      cilk_read_reducer(&result_x, __builtin_return_address(0), __FUNCTION__, __LINE__);
         *result_x += n; 
     } else {
 
@@ -49,6 +43,8 @@ void fib(int n) {
 
 int main(int argc, char *argv[]) {
 
+    cilk_set_reducer(&result_x, __builtin_return_address(0), __FUNCTION__, __LINE__);
+
     int n = 0;
     // argc = __cilksan_parse_input(argc, argv);
 
@@ -56,8 +52,6 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Usage: fib [<cilk options>] <n>\n");
         exit(1); 
     }
-
-    cilk_set_reducer(&result_x, __builtin_return_address(0));
 
     n = atoi(argv[1]);
     fib(n);

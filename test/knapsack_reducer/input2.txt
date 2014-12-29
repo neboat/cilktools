@@ -1,0 +1,21 @@
+100 5 20 
+phone        10 10 
+tent         20 80
+water        5 120
+food         7 100 
+camera       3 200
+blanket      1 15
+book         9 23
+lamp         3 17
+clothes      5 100
+shoes        10 60
+glasses      3 100
+candy        1 5
+coffee       1 10
+mug          3 20
+chair        20 180
+bag          15 90
+painting     10 200
+brush        5 70
+hair dryer   8 40
+pot          10 60

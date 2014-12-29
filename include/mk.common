@@ -7,11 +7,11 @@ CC = gcc
 CXX = g++
 BASIC_CFLAGS = -O1 -Wall -g
 BASIC_CXXFLAGS=$(BASIC_CFLAGS)
-TOOLFLAGS = -I../include/
+TOOLFLAGS = -I $(INCLUDE_DIR)
 APPFLAGS = -fcilkplus -g
 CFLAGS=$(BASIC_CFLAGS) -std=gnu11 $(TOOLFLAGS)
 CXXFLAGS=$(BASIC_CXXFLAGS) -std=gnu++11 $(TOOLFLAGS)
-#LDFLAGS=-fcilkplus
+LDFLAGS= -L $(LIB_DIR)
 #LDLIBS=-g
 
 ifeq ($(COMPILER),LLVM)
@@ -26,13 +26,12 @@ CXX = $(COMPILER_ROOT)/bin/g++
 APPFLAGS += -fcilktool
 endif
 
-.PHONY : default clean
+## Each C source file will have a corresponding file of prerequisites.
+## Include the prerequisites for each of our C source files.
+#-include $(OBJ:.o=.d)
 
-default : $(TARGETS)
-
-# Each C source file will have a corresponding file of prerequisites.
-# Include the prerequisites for each of our C source files.
--include $(OBJ:.o=.d)
+$(LIB_DIR) :
+	if [ ! -e $(LIB_DIR) ]; then mkdir -p $(LIB_DIR); fi
 
 # This rule generates a file of prerequisites (i.e., a makefile)
 # called name.d from a C source file name.c.
@@ -68,6 +67,9 @@ default : $(TARGETS)
 
 %.o : %.cc
 	$(CXX) $(CXXFLAGS) -c $<
+
+$(LIB_DIR)/lib%.a : %.o | $(LIB_DIR)
+	ar -rv $@ $<
 
 %_% :
 	$(CC) $(CFLAGS) $(LDFLAGS) $(LDLIBS) $^ -o $@

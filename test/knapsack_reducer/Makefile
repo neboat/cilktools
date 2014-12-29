@@ -1,7 +1,7 @@
 LIB_DIR = ../../lib
 INCLUDE_DIR = ../../include
 
-TEST = fib
+TEST = matteo-knapsack
 
 default : $(TEST)
 
