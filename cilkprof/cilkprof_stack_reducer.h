@@ -13,7 +13,7 @@
 /* Identity method for cilkprof stack reducer */
 void identity_cilkprof_stack(void *reducer, void *view)
 {
-  cilkprof_stack_init((cilkprof_stack_t*)view, SPAWN);
+  cilkprof_stack_init((cilkprof_stack_t*)view, SPAWNER);
 }
 
 /* Reduce method for cilkprof stack reducer */
@@ -25,7 +25,7 @@ void reduce_cilkprof_stack(void *reducer, void *l, void *r)
   cilkprof_stack_t *right = (cilkprof_stack_t*)r;
 
   assert(NULL == right->bot->parent);
-  assert(SPAWN == right->bot->func_type);
+  assert(SPAWNER == right->bot->func_type);
   assert(right->bot->func_type == left->bot->func_type);
 
   assert(!(left->in_user_code));

@@ -11,7 +11,7 @@
 /* Enum for types of functions */
 typedef enum {
   MAIN,
-  SPAWN,
+  SPAWNER,
   HELPER,
 } cilk_function_type;
 
