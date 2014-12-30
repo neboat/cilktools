@@ -253,6 +253,7 @@ void cilk_sync_end(__cilkrts_stack_frame *sf)
       stack->bot->p_bag = NULL;
     } else if (NULL != stack->bot->p_bag) {
       DisjointSet_combine(stack->bot->sp_bag, stack->bot->p_bag);
+      stack->bot->sp_bag->type = SP;
       assert(SP == stack->bot->sp_bag->type);
       stack->bot->p_bag = NULL;
     }
@@ -293,8 +294,10 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 
       if (NULL == stack->bot->sp_bag && NULL != old_bottom->sp_bag) {
         stack->bot->sp_bag = DisjointSet_find_set(old_bottom->sp_bag);
+        stack->bot->sp_bag->type = SP;
       } else if (NULL != old_bottom->sp_bag) {
         DisjointSet_combine(stack->bot->sp_bag, old_bottom->sp_bag);
+        stack->bot->sp_bag->type = SP;
       }
       assert(NULL == stack->bot->sp_bag || SP == stack->bot->sp_bag->type);
       break;
@@ -310,11 +313,11 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
         stack->bot->p_bag->type = P;
       } else {
         DisjointSet_combine(stack->bot->p_bag, old_bottom->ss_bag);
-        
-        assert(P == stack->bot->p_bag->type);
+        stack->bot->p_bag->type = P;
       }
       if (NULL != old_bottom->sp_bag) {
         DisjointSet_combine(stack->bot->p_bag, old_bottom->sp_bag);
+        stack->bot->p_bag->type = P;
         assert(P == stack->bot->p_bag->type);
       }
       break;
