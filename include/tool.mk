@@ -9,6 +9,7 @@ LDLIBS= -lrt -ldl -lpthread
 
 ifeq ($(TOOL),CILKPROF)
 	BASIC_CFLAGS += -DCILKPROF=1 -DCILKSAN=0
+	APPFLAGS += -fcilktool-instr-c
         TOOLFLAGS += -I$(TOOL_HOME)/include
         TOOL_TARGET = $(TOOL_HOME)/cilkprof/cilkprof.o
 else ifeq ($(TOOL),CILKSAN)
