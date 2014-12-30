@@ -1,0 +1,37 @@
+CILKSAN = redrace
+
+CC = ../../../bin/gcc 
+CXX = ../../../bin/g++ 
+CFLAGS = -O3 -g -Werror -fcilkplus
+
+TOOL_FLAGS = -I$(CURDIR)/../$(CILKSAN) -fsanitize=thread -fcilktool 
+LDFLAGS = -fcilkplus -g -Wl,-rpath -Wl,$(CURDIR)/../../../lib64 -Wl,-rpath -Wl,$(CURDIR)/../$(CILKSAN) -L../$(CILKSAN)
+LDLIBS = -ldl -lcilksan
+
+ALL = collision
+
+all: $(ALL)
+
+collision : MultiCoreCollisionDetection.o aabbtree.o meshprocess.o tritri.o vector.o vrmlParser.o
+	$(CXX) -o $@ $(CFLAGS) $^ $(LDFLAGS) $(LDLIBS)
+
+aabbtree.o : aabbtree.cpp aabbtree.h
+meshprocess.o : meshprocess.cpp meshprocess.h
+tritri.o : tritri.cpp tritri.h
+vector.o : vector.cpp vector.h
+vrmlParser.o : vrmlParser.cpp vrmlParser.h
+
+%.o:	%.cpp
+	$(CXX) -c -o $@ $(CFLAGS) $(TOOL_FLAGS) $<
+
+%.run : %
+	./$<
+
+%.smoke : %
+	./$< --smoke
+
+hypervector_test : hypervector_test.cpp reducer_vector.h
+	$(CXX) -o $@ $(CFLAGS) $(LDFLAGS) $(LDLIBS) hypervector_test.cpp
+
+clean:
+	rm -f $(ALL) hypervector_test *.o *~
