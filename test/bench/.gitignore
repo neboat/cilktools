@@ -1,0 +1,17 @@
+*.o
+choleskey
+cilksort
+fft
+fib 
+fib-serial
+fibx
+foo
+heat
+knapsack
+lu
+matmul
+nqueens
+rectmul
+strassen
+throw
+qsort

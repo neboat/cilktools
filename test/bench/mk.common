@@ -1,0 +1,89 @@
+# -*- mode: makefile-gmake; -*-
+COMPILER ?= LLVM
+TOOL = CILKPROF
+
+COMPILERS_HOME = $(HOME)/sandbox/llvm_cilk_ok
+CILKRTS_HOME = $(HOME)/sandbox/llvm_cilk_ok/cilkplus_rts
+TOOL_HOME = $(HOME)/sandbox/llvm_cilk_ok/cilktools
+
+CC = gcc
+CXX = g++
+BASIC_CFLAGS = -g -O0 -W -Wall -fcilkplus # -Werror 
+BASIC_CXXFLAGS=$(BASIC_CFLAGS)
+TOOLFLAGS = 
+CFLAGS = $(BASIC_CFLAGS) -std=c11 $(TOOLFLAGS)
+CXXFLAGS = $(BASIC_CXXFLAGS) -std=c++11 $(TOOLFLAGS)
+
+CILKRTS_STATIC_LIB=$(CILKRTS_HOME)/lib/libcilkrts.a
+# CILKRTS_DYNAMIC_LIB=-Wl,-rpath -Wl,$(CILKRTS_HOME)/lib -lcilkrts
+LDFLAGS = $(CILKRTS_STATIC_LIB)
+LDLIBS= -lrt -ldl -lpthread
+
+ifeq ($(TOOL),CILKPROF)
+	BASIC_CFLAGS += -DCILKPROF=1 -DCILKSAN=0
+        TOOLFLAGS += -I$(TOOL_HOME)/include
+        TOOL_TARGET = $(TOOL_HOME)/cilkprof/cilkprof.o
+else ifeq ($(TOOL),CILKSAN)
+	TOOLFLAGS += -I$(TOOL_HOME)/cilksan -fsanitize=thread
+	BASIC_CFLAGS += -DCILKPROF=0 -DCILKSAN=1
+        TOOL_TARGET = $(TOOL_HOME)/cilksan/libcilksan.a
+        # Use the following for dynamic linking
+	#LDFLAGS += -Wl,-rpath -Wl,$(TOOL_HOME)/cilksan -L$(TOOL_HOME)/cilksan
+	#LDLIBS += -lcilksan
+else ifeq ($(TOOL),NULL)
+	BASIC_CFLAGS += -DCILKPROF=0 -DCILKSAN=0
+endif
+
+ifeq ($(COMPILER),LLVM)
+	COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilk-ok
+	CC = $(COMPILER_ROOT)/bin/clang
+	CXX = $(COMPILER_ROOT)/bin/clang++
+else ifeq ($(COMPILER), GCC)
+	COMPILER_ROOT = $(COMPILERS_HOME)/../gcc_cilk_ok
+	CC = $(COMPILER_ROOT)/bin/gcc
+	CXX = $(COMPILER_ROOT)/bin/g++
+	TOOLFLAGS += -fcilktool
+endif
+
+.PHONY : default clean
+
+default : $(TARGETS)
+
+# Each C source file will have a corresponding file of prerequisites.
+# Include the prerequisites for each of our C source files.
+-include $(OBJ:.o=.d)
+
+# This rule generates a file of prerequisites (i.e., a makefile)
+# called name.d from a C source file name.c.
+%.d : CFLAGS += -MM -MP
+%.d : %.c
+	@set -e; rm -f $@; \
+	$(CC) $(CFLAGS) -MF $@.$$$$ $<; \
+	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
+	rm -f $@.$$$$
+
+# This rule generates a file of prerequisites (i.e., a makefile)
+# called name.d from a CPP source file name.cpp.
+%.d : CXXFLAGS += -MM -MP
+%.d : %.cpp
+	@set -e; rm -f $@; \
+	$(CXX) $(CXXFLAGS) -MF $@.$$$$ $<; \
+	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
+	rm -f $@.$$$$
+
+# This rule generates a file of prerequisites (i.e., a makefile)
+# called name.d from a CPP source file name.cc.
+%.d : %.cc
+	@set -e; rm -f $@; \
+	$(CXX) $(CXXFLAGS) -MF $@.$$$$ $<; \
+	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
+	rm -f $@.$$$$
+
+%.o : %.c
+	$(CC) $(CFLAGS) -c $<
+
+%.o : %.cpp
+	$(CXX) $(CXXFLAGS) -c $<
+
+%.o : %.cc
+	$(CXX) $(CXXFLAGS) -c $<
