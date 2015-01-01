@@ -13,6 +13,7 @@ typedef enum {
   MAIN,
   SPAWNER,
   HELPER,
+  C_FUNCTION,
 } cilk_function_type;
 
 /* Type for a cilkprof stack frame */
@@ -125,7 +126,7 @@ cilkprof_stack_frame_t* cilkprof_stack_pop(cilkprof_stack_t *stack)
 {
   cilkprof_stack_frame_t *old_bottom = stack->bot;
   stack->bot = stack->bot->parent;
-  if (stack->bot->height < old_bottom->height + 1) {
+  if (stack->bot && stack->bot->height < old_bottom->height + 1) {
     stack->bot->height = old_bottom->height + 1;
   }
 

@@ -7,6 +7,7 @@ ifeq ($(PARALLEL),1)
 CFLAGS += -DSERIAL_TOOL=0 -fcilkplus
 endif
 
+INCLUDE_DIR=./../include
 cilkprof.o : # CFLAGS += -flto
 cilkprof.o : # LDFLAGS += -lrt
 

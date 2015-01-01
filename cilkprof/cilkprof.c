@@ -26,10 +26,13 @@
 #endif
 
 #ifndef TRACE_CALLS
-#define TRACE_CALLS 1
+#define TRACE_CALLS 0
 #endif
 
-#if !SERIAL_TOOL
+#if SERIAL_TOOL
+#define GET_STACK(ex) ex
+#else
+#define GET_STACK(ex) REDUCER_VIEW(ex)
 #include "cilkprof_stack_reducer.h"
 #endif
 
@@ -46,9 +49,9 @@
 
 
 #if SERIAL_TOOL
-cilkprof_stack_t ctx_stack;
+static cilkprof_stack_t ctx_stack;
 #else
-CILK_C_DECLARE_REDUCER(cilkprof_stack_t) ctx_stack =
+static CILK_C_DECLARE_REDUCER(cilkprof_stack_t) ctx_stack =
   CILK_C_INIT_REDUCER(cilkprof_stack_t,
 		      reduce_cilkprof_stack,
 		      identity_cilkprof_stack,
@@ -56,7 +59,7 @@ CILK_C_DECLARE_REDUCER(cilkprof_stack_t) ctx_stack =
 		      {NULL});
 #endif
 
-bool TOOL_INITIALIZED = false;
+static bool TOOL_INITIALIZED = false;
 
 /*
  * Linked list of mappings.
@@ -77,7 +80,7 @@ typedef struct mapping_list_t {
   mapping_list_el_t *tail;
 } mapping_list_t;
 
-mapping_list_t maps = { .head = NULL, .tail = NULL };
+static mapping_list_t maps = { .head = NULL, .tail = NULL };
 
 /*************************************************************************/
 /**
@@ -206,42 +209,55 @@ static void print_addr(uintptr_t a) {
 /*************************************************************************/
 
 void cilk_tool_init(void) {
-  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_tool_init()\n"); )
+  // Do the initialization only if it hasn't been done. 
+  // It could have been done if we instrument C functions, and the user 
+  // separately calls cilk_tool_init in the main function.
+  if(!TOOL_INITIALIZED) {
+    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_tool_init()\n"); )
 
-  // This is a serial tool
+    // This is a serial tool
 #if SERIAL_TOOL
-  ensure_serial_tool();
-  cilkprof_stack_init(&ctx_stack, MAIN);
-  ctx_stack.in_user_code = true;
-  gettime(&(ctx_stack.start));
+    ensure_serial_tool();
 #else
-  cilkprof_stack_init(&(REDUCER_VIEW(ctx_stack)), MAIN);
-  CILK_C_REGISTER_REDUCER(ctx_stack);
-  REDUCER_VIEW(ctx_stack).in_user_code = true;
-  gettime(&(REDUCER_VIEW(ctx_stack).start));
+    // probably need to register the reducer here as well.
+    CILK_C_REGISTER_REDUCER(ctx_stack);
 #endif
+    cilkprof_stack_init(&(GET_STACK(ctx_stack)), MAIN);
+    GET_STACK(ctx_stack).in_user_code = true;
+    gettime(&(GET_STACK(ctx_stack).start));
 
-  TOOL_INITIALIZED = true;
+    TOOL_INITIALIZED = true;
+  }
 }
 
+/* Cleaningup; note that these cleanup may not be performed if
+ * the user did not include cilk_tool_destroy in its main function and the
+ * program is not compiled with -fcilktool_instr_c.
+ */
 void cilk_tool_destroy(void) {
-  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_tool_destroy()\n"); )
+  // Do the destroy only if it hasn't been done. 
+  // It could have been done if we instrument C functions, and the user 
+  // separately calls cilk_tool_destroy in the main function.
+  if(TOOL_INITIALIZED) {
+    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_tool_destroy()\n"); )
+
+    cilkprof_stack_t *stack = &GET_STACK(ctx_stack);
+    /* Pop the stack */
+    cilkprof_stack_frame_t *old_bottom = cilkprof_stack_pop(stack);
+
+    assert(old_bottom && MAIN == old_bottom->func_type);
 
 #if !SERIAL_TOOL
-  CILK_C_UNREGISTER_REDUCER(ctx_stack);
-
-  free_cc_hashtable(REDUCER_VIEW(ctx_stack).wrk_table);
-  free_cc_hashtable(REDUCER_VIEW(ctx_stack).bot->prefix_table);
-  free_cc_hashtable(REDUCER_VIEW(ctx_stack).bot->lchild_table);
-  free_cc_hashtable(REDUCER_VIEW(ctx_stack).bot->contin_table);
-#else
-  free_cc_hashtable(ctx_stack.wrk_table);
-  free_cc_hashtable(ctx_stack.bot->prefix_table);
-  free_cc_hashtable(ctx_stack.bot->lchild_table);
-  free_cc_hashtable(ctx_stack.bot->contin_table);
+    CILK_C_UNREGISTER_REDUCER(ctx_stack);
 #endif
+    free_cc_hashtable(stack->wrk_table);
+    free_cc_hashtable(old_bottom->prefix_table);
+    free_cc_hashtable(old_bottom->lchild_table);
+    free_cc_hashtable(old_bottom->contin_table);
+    free(old_bottom);
 
-  TOOL_INITIALIZED = false;
+    TOOL_INITIALIZED = false;
+  }
 }
 
 void cilk_tool_print(void) {
@@ -250,11 +266,7 @@ void cilk_tool_print(void) {
   assert(TOOL_INITIALIZED);
 
   cilkprof_stack_t *stack;
-#if SERIAL_TOOL
-  stack = &ctx_stack;
-#else
-  stack = &REDUCER_VIEW(ctx_stack);
-#endif 
+  stack = &GET_STACK(ctx_stack);
 
   assert(NULL != stack->bot);
   assert(MAIN == stack->bot->func_type);
@@ -366,28 +378,20 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* rip)
   WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_begin(%p, %p)\n", sf, rip); )
 
   /* fprintf(stderr, "worker %d entering %p\n", __cilkrts_get_worker_number(), sf); */
-  cilkprof_stack_t *stack;
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
   if (!TOOL_INITIALIZED) {
     // This is not exactly the same as what cilk_tool_init() does.
 #if SERIAL_TOOL
     ensure_serial_tool();
-    cilkprof_stack_init(&ctx_stack, MAIN);
-    stack = &ctx_stack;
 #else
-    cilkprof_stack_init(&(REDUCER_VIEW(ctx_stack)), MAIN);
     CILK_C_REGISTER_REDUCER(ctx_stack);
-    stack = &(REDUCER_VIEW(ctx_stack));
 #endif
+    cilkprof_stack_init(stack, MAIN);
     TOOL_INITIALIZED = true;
 
   } else {
-#if SERIAL_TOOL
-    stack = &ctx_stack;
-#else
-    stack = &(REDUCER_VIEW(ctx_stack));
-#endif
-
+    stack = &(GET_STACK(ctx_stack));
     gettime(&(stack->stop));
 
     assert(NULL != stack->bot);
@@ -411,15 +415,12 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* rip)
 
 void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
 {
-#if SERIAL_TOOL
-  cilkprof_stack_t *stack = &ctx_stack;
-#else
-  cilkprof_stack_t *stack = &(REDUCER_VIEW(ctx_stack));
-#endif
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
-  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_helper_begin(%p, %p) from SPAWNER\n", sf, rip); )
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_helper_begin(%p, %p)\n", sf, rip); )
 
   assert(NULL != stack->bot);
+  assert(!stack->in_user_code); // set to false in cilk_spawn_prepare
 
   /* Push new frame onto the stack */
   cilkprof_stack_push(stack, HELPER);
@@ -430,11 +431,7 @@ void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
 
 void cilk_enter_end(__cilkrts_stack_frame *sf, void *rsp)
 {
-#if SERIAL_TOOL
-  cilkprof_stack_t *stack = &ctx_stack;
-#else
-  cilkprof_stack_t *stack = &(REDUCER_VIEW(ctx_stack));
-#endif
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
   if (SPAWNER == stack->bot->func_type) {
     WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_end(%p, %p) from SPAWNER\n", sf, rsp); )
@@ -449,51 +446,130 @@ void cilk_enter_end(__cilkrts_stack_frame *sf, void *rsp)
 
 void cilk_tool_c_function_enter(void *rip)
 {
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
+
   WHEN_TRACE_CALLS( fprintf(stderr, "c_function_enter(%p)\n", rip); )
-}
 
-void cilk_tool_c_function_leave(void *rip)
-{
-  WHEN_TRACE_CALLS( fprintf(stderr, "c_function_leave(%p)\n", rip); )
-}
+  if(!TOOL_INITIALIZED) { // We are entering main.
+    cilk_tool_init(); // this will push the frame for MAIN and do a gettime
 
-void cilk_spawn_prepare(__cilkrts_stack_frame *sf)
-{
-  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_spawn_prepare(%p)\n", sf); )
-
-  cilkprof_stack_t *stack;
-  if (TOOL_INITIALIZED) {
-#if SERIAL_TOOL
-    stack = &ctx_stack;
-#else
-    stack = &(REDUCER_VIEW(ctx_stack));
-#endif
-
+  } else {
+    assert(stack->in_user_code);
+    /* stop the timer and attribute the elapsed time to the caller */
     gettime(&(stack->stop));
 
     uint64_t strand_time = elapsed_nsec(&(stack->stop), &(stack->start));
     stack->bot->running_wrk += strand_time;
     stack->bot->contin_spn += strand_time;
 
-    assert(stack->in_user_code);
-    stack->in_user_code = false;
+    /* Push new frame for this C function onto the stack */
+    cilkprof_stack_push(stack, C_FUNCTION);
+    stack->bot->rip = (uintptr_t)__builtin_extract_return_addr(rip);
+    /* the stop time is also the start time of this function */
+    stack->start = stack->stop;  
   }
 }
 
+void cilk_tool_c_function_leave(void *rip)
+{
+  WHEN_TRACE_CALLS( fprintf(stderr, "c_function_leave(%p)\n", rip); )
+
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
+
+  if(stack->bot && MAIN == stack->bot->func_type) {
+    cilk_tool_destroy();
+  }
+  if(!TOOL_INITIALIZED) {
+    // either user code already called cilk_tool_destroy, or we are leaving
+    // main; in either case, nothing to do here;
+    return;
+  }
+
+  bool add_success;
+  cilkprof_stack_frame_t *old_bottom;
+
+  assert(stack->in_user_code);
+  /* stop the timer and attribute the elapsed time to this returning function */
+  gettime(&(stack->stop));
+
+  uint64_t strand_time = elapsed_nsec(&(stack->stop), &(stack->start));
+  stack->bot->running_wrk += strand_time;
+  stack->bot->contin_spn += strand_time;
+
+  assert(NULL != stack->bot->parent);
+  /* given this is a C function, everything should be accumulated in
+   * contin_spn and contin_table, so let's just deposit that into the parent */
+  assert(0 == stack->bot->prefix_spn);
+  assert(0 == stack->bot->lchild_spn);
+  assert(cc_hashtable_is_empty(stack->bot->prefix_table));
+  assert(cc_hashtable_is_empty(stack->bot->lchild_table));
+
+  /* Pop the stack */
+  old_bottom = cilkprof_stack_pop(stack);
+
+  stack->bot->running_wrk += old_bottom->running_wrk;
+  stack->bot->contin_spn += old_bottom->contin_spn;
+
+  /* Update work table */
+  /* fprintf(stderr, "adding to wrk table\n"); */
+  add_success = add_to_cc_hashtable(&(stack->wrk_table),
+                                    old_bottom->height,
+				    old_bottom->rip,
+				    old_bottom->running_wrk,
+				    old_bottom->contin_spn);
+  assert(add_success);
+
+  /* Update continuation span table */
+  /* fprintf(stderr, "adding tables\n"); */
+  add_cc_hashtables(&(stack->bot->contin_table), &(old_bottom->contin_table));
+
+  /* fprintf(stderr, "adding to contin table\n"); */
+  add_success = add_to_cc_hashtable(&(stack->bot->contin_table),
+				    old_bottom->height,
+				    old_bottom->rip,
+				    old_bottom->running_wrk,
+				    old_bottom->contin_spn);
+  assert(add_success);
+
+  /* clean up */
+  free(old_bottom->prefix_table);
+  free(old_bottom->contin_table);
+  free(old_bottom->lchild_table);
+  free(old_bottom);
+}
+
+void cilk_spawn_prepare(__cilkrts_stack_frame *sf)
+{
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_spawn_prepare(%p)\n", sf); )
+
+  // Tool must have been initialized as this is only called in a SPAWNER, and 
+  // we would have at least initialized the tool in the first cilk_enter_begin.
+  assert(TOOL_INITIALIZED);
+
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
+
+  gettime(&(stack->stop));
+
+  uint64_t strand_time = elapsed_nsec(&(stack->stop), &(stack->start));
+  stack->bot->running_wrk += strand_time;
+  stack->bot->contin_spn += strand_time;
+
+  assert(stack->in_user_code);
+  stack->in_user_code = false;
+}
+
+// If in_continuation == 0, we just did setjmp and about to call the spawn helper.  
+// If in_continuation == 1, we are resuming after setjmp (via longjmp) at the continuation 
+// of a spawn statement; note that this is possible only if steals can occur.
 void cilk_spawn_or_continue(int in_continuation)
 {
-  cilkprof_stack_t *stack;
-#if SERIAL_TOOL
-  stack = &ctx_stack;
-#else
-  stack = &(REDUCER_VIEW(ctx_stack));
-#endif
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
+  assert(!(stack->in_user_code));
   if (in_continuation) {
     // In the continuation
     WHEN_TRACE_CALLS( 
       fprintf(stderr, "cilk_spawn_or_continue(%d) from continuation\n", in_continuation); )
-    assert(!(stack->in_user_code));
     stack->in_user_code = true;
     gettime(&(stack->start));
   } else {
@@ -506,15 +582,10 @@ void cilk_detach_begin(__cilkrts_stack_frame *parent)
 {
   WHEN_TRACE_CALLS( fprintf(stderr, "cilk_detach_begin(%p)\n", parent); )
 
-  cilkprof_stack_t *stack;
-#if SERIAL_TOOL
-  stack = &ctx_stack;
-#else
-  stack = &(REDUCER_VIEW(ctx_stack));
-#endif
-  
-  gettime(&(stack->stop));
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
+  assert(HELPER == stack->bot->func_type);
 
+  gettime(&(stack->stop));
   uint64_t strand_time = elapsed_nsec(&(stack->stop), &(stack->start));
   stack->bot->running_wrk += strand_time;
   stack->bot->contin_spn += strand_time;
@@ -529,12 +600,7 @@ void cilk_detach_end(void)
 {
   WHEN_TRACE_CALLS( fprintf(stderr, "cilk_detach_end()\n"); )
 
-  cilkprof_stack_t *stack;
-#if SERIAL_TOOL
-  stack = &ctx_stack;
-#else
-  stack = &(REDUCER_VIEW(ctx_stack));
-#endif
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
   
   assert(!(stack->in_user_code));
   stack->in_user_code = true;
@@ -545,11 +611,7 @@ void cilk_detach_end(void)
 
 void cilk_sync_begin(__cilkrts_stack_frame *sf)
 {
-#if SERIAL_TOOL
-  cilkprof_stack_t *stack = &ctx_stack;
-#else
-  cilkprof_stack_t *stack = &(REDUCER_VIEW(ctx_stack));
-#endif
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
   gettime(&(stack->stop));
 
   if (SPAWNER == stack->bot->func_type) {
@@ -567,11 +629,7 @@ void cilk_sync_begin(__cilkrts_stack_frame *sf)
 
 void cilk_sync_end(__cilkrts_stack_frame *sf)
 {
-#if SERIAL_TOOL
-  cilkprof_stack_t *stack = &ctx_stack;
-#else
-  cilkprof_stack_t *stack = &(REDUCER_VIEW(ctx_stack));
-#endif
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
   if (stack->bot->lchild_spn > stack->bot->contin_spn) {
     stack->bot->prefix_spn += stack->bot->lchild_spn;
@@ -586,23 +644,19 @@ void cilk_sync_end(__cilkrts_stack_frame *sf)
   clear_cc_hashtable(stack->bot->lchild_table);
   clear_cc_hashtable(stack->bot->contin_table);
   
-  if (SPAWNER == stack->bot->func_type) {
-    assert(!(stack->in_user_code));
-    stack->in_user_code = true;
-    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_end(%p) from SPAWNER\n", sf); )
-    gettime(&(stack->start));
-  } else {
-    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_end(%p) from HELPER\n", sf); )
-  }
+  // can't be anything else; only SPAWNER have sync
+  assert(SPAWNER == stack->bot->func_type); 
+  assert(!(stack->in_user_code));
+  stack->in_user_code = true;
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_end(%p) from SPAWNER\n", sf); )
+  gettime(&(stack->start));
 }
 
 void cilk_leave_begin(__cilkrts_stack_frame *sf)
 {
-#if SERIAL_TOOL
-  cilkprof_stack_t *stack = &ctx_stack;
-#else
-  cilkprof_stack_t *stack = &(REDUCER_VIEW(ctx_stack));
-#endif
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_leave_begin(%p)\n", sf); )
+
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
   cilkprof_stack_frame_t *old_bottom;
   bool add_success;
@@ -613,6 +667,8 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
   stack->in_user_code = false;
 
   if (SPAWNER == stack->bot->func_type) {
+    // This is the case we are returning to a call, since a SPAWNER
+    // is always called by a spawn helper.
     /* fprintf(stderr, "cilk_leave_begin(%p) from SPAWNER\n", sf); */
 
     uint64_t strand_time = elapsed_nsec(&(stack->stop), &(stack->start));
@@ -620,8 +676,12 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
     stack->bot->contin_spn += strand_time;
 
     assert(NULL != stack->bot->parent);
-
+    /* we are at leave, so this function must have sync-ed, so lchild should
+     * be 0 / empty; prefix could contain value, however, if this function is
+     * Cilk function that spawned before.
+     */
     assert(0 == stack->bot->lchild_spn);
+    assert(cc_hashtable_is_empty(stack->bot->lchild_table));
     stack->bot->prefix_spn += stack->bot->contin_spn;
 
     add_cc_hashtables(&(stack->bot->prefix_table), &(stack->bot->contin_table));
@@ -661,6 +721,8 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
     assert(add_success);
 
   } else {
+    // This is the case we are returning to a spawn, since a HELPER 
+    // is always invoked due to a spawn statement.
     /* fprintf(stderr, "cilk_leave_begin(%p) from HELPER\n", sf); */
 
     assert(HELPER != stack->bot->parent->func_type);
@@ -712,7 +774,6 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
       free(old_bottom->lchild_table);
       free(old_bottom->contin_table);
     }
-
   }
 
   free(old_bottom);
@@ -720,11 +781,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 
 void cilk_leave_end(void)
 {
-#if SERIAL_TOOL
-  cilkprof_stack_t *stack = &ctx_stack;
-#else
-  cilkprof_stack_t *stack = &(REDUCER_VIEW(ctx_stack));
-#endif
+  cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
 #if TRACE_CALLS
   switch(stack->bot->func_type) {
@@ -736,6 +793,10 @@ void cilk_leave_end(void)
     break;
   case MAIN:
     fprintf(stderr, "cilk_leave_end() from MAIN\n");
+    break;
+  case C_FUNCTION:
+    /* we can have leave_end from C_FUNCTION because leave_begin popped the stack already */
+    fprintf(stderr, "cilk_leave_end() from C_FUNCTION\n");
     break;
   }
 #endif

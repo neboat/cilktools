@@ -70,6 +70,7 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
 			 uint64_t wrk, uint64_t spn);
 cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left,
 				  cc_hashtable_t **right);
+bool cc_hashtable_is_empty(cc_hashtable_t *tab);
 
 /*************************************************************************/
 
@@ -502,6 +503,7 @@ cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left, cc_hashtable_t **right)
   } else {
     assert(NULL == (*left)->head);
     (*left)->head = (*right)->head;
+    // XXX: Why not just do this?  Does it matter if both are NULL?
     /* (*left)->tail = (*right)->tail; */
   }
   (*left)->list_size += (*right)->list_size;
@@ -578,6 +580,10 @@ void free_cc_hashtable(cc_hashtable_t *tab) {
   }
 
   free(tab);
+}
+
+bool cc_hashtable_is_empty(cc_hashtable_t *tab) {
+  return tab->table_size == 0 && tab->list_size == 0;
 }
 
 #endif

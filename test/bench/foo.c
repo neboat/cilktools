@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <cilk/cilk.h>
 
+#if CILKPROF
+#include <cilktool.h>
+#endif
+
 static int bar(int x) {
   if(x > 3) {
     printf("In bar, taken if.\n");
@@ -23,6 +27,10 @@ static int foo(int x) {
 }
 
 int main(int argc, char *argv[]) { 
+#if CILKPROF
+    cilk_tool_init();
+#endif
+
   int n = 0;
   if(argc > 1) {
     n = atoi(argv[1]);
@@ -31,5 +39,10 @@ int main(int argc, char *argv[]) {
   bar(n);
   printf("%d.\n", ret);
  
+#if CILKPROF
+    cilk_tool_print();
+    cilk_tool_destroy();
+#endif
+  
   return 0; 
 }

@@ -1,8 +1,9 @@
 *.o
-choleskey
+*.out
+cholesky
 cilksort
 fft
-fib 
+fib
 fib-serial
 fibx
 foo
