@@ -1,8 +1,8 @@
-TARGETS := libcilksan.so libcilksan.a
-SRC := cilksan.cpp debug_util.cpp mem_access.cpp driver.cpp print_addr.cpp
-OBJ := $(SRC:.cpp=.o)
+CILKSAN_TARGETS := libcilksan.so libcilksan.a
+CILKSAN_SRC := cilksan.cpp debug_util.cpp mem_access.cpp driver.cpp print_addr.cpp
+CILKSAN_OBJ := $(CILKSAN_SRC:.cpp=.o)
 
--include ../include/mk.common
+SUFFIXES += cs
 
 LIB_CFLAGS += -fPIC
 LIB_CXXFLAGS += $(LIB_CFLAGS)
@@ -28,5 +28,5 @@ libcilksan.so: $(OBJ)
 libcilksan.a: $(OBJ)
 	ar rcs $@ $^ 
 
-clean :
-	rm -rf *.o *.d* *.so *.a *~
+cleancilksan :
+	rm -rf *.o *.d* $(CILKSAN_TARGETS) *~

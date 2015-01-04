@@ -247,6 +247,14 @@ void cilk_enter_end(__cilkrts_stack_frame *sf, void *rsp)
   }
 }
 
+void cilk_tool_c_function_enter(void *rip) {
+  /* fprintf(stderr, "C function enter %p.\n", rip); */
+}
+
+void cilk_tool_c_function_leave(void *rip) {
+  /* fprintf(stderr, "C function leave %p.\n", rip); */
+}
+
 void cilk_spawn_prepare(__cilkrts_stack_frame *sf)
 {
   /* cilkview_perf_stack_t *stack = &(REDUCER_VIEW(ctx_stack)); */

@@ -1,5 +1,5 @@
-TEST := quicksort
-SRC := quicksort.cpp
+TEST = quicksort
+QUICKSORT_SRC = quicksort.cpp
 
 -include ../../include/mk.common
 

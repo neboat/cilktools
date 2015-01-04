@@ -247,20 +247,20 @@ void cilk_sync_end(__cilkrts_stack_frame *sf)
     /* fprintf(stderr, "SP bag %p, P bag %p\n", */
     /*         stack->bot->sp_bag, stack->bot->p_bag); */
 
-    if (NULL == stack->bot->sp_bag && NULL != stack->bot->p_bag) {
-      stack->bot->sp_bag = DisjointSet_find_set(stack->bot->p_bag);
-      stack->bot->sp_bag->type = SP;
-      stack->bot->p_bag = NULL;
-    } else if (NULL != stack->bot->p_bag) {
-      DisjointSet_combine(stack->bot->sp_bag, stack->bot->p_bag);
-      stack->bot->sp_bag->type = SP;
-      assert(SP == stack->bot->sp_bag->type);
-      stack->bot->p_bag = NULL;
-    }
+    /* if (NULL == stack->bot->sp_bag && NULL != stack->bot->p_bag) { */
+    /*   stack->bot->sp_bag = DisjointSet_find_set(stack->bot->p_bag); */
+    /*   stack->bot->sp_bag->type = SP; */
+    /*   stack->bot->p_bag = NULL; */
+    /* } else if (NULL != stack->bot->p_bag) { */
+    /*   DisjointSet_combine(stack->bot->sp_bag, stack->bot->p_bag); */
+    /*   stack->bot->sp_bag->type = SP; */
+    /*   assert(SP == stack->bot->sp_bag->type); */
+    /*   stack->bot->p_bag = NULL; */
+    /* } */
     assert(!(stack->in_user_code));
     stack->in_user_code = true;
   } else {
-    assert(NULL == stack->bot->p_bag);
+    assert(NULL == stack->bot->d_bag);
 #if TRACE_CALLS
     fprintf(stderr, "cilk_sync_end(%p) from HELPER\n", sf);
 #endif
@@ -284,41 +284,53 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 #if TRACE_CALLS
       fprintf(stderr, "cilk_leave_begin(%p) from CILK\n", sf);
 #endif
-      /* fprintf(stderr, "combining SS bags %p and %p\n", */
-      /*         stack->bot->ss_bag, old_bottom->ss_bag); */
 
-      DisjointSet_combine(stack->bot->ss_bag, old_bottom->ss_bag);
-
-      /* fprintf(stderr, "returning SP bag %p, dest SP bag %p\n", */
-      /*         old_bottom->sp_bag, stack->bot->sp_bag); */
-
-      if (NULL == stack->bot->sp_bag && NULL != old_bottom->sp_bag) {
-        stack->bot->sp_bag = DisjointSet_find_set(old_bottom->sp_bag);
-        stack->bot->sp_bag->type = SP;
-      } else if (NULL != old_bottom->sp_bag) {
-        DisjointSet_combine(stack->bot->sp_bag, old_bottom->sp_bag);
-        stack->bot->sp_bag->type = SP;
+      /* fprintf(stderr, "returning D bag %p, dest D bag %p\n", */
+      /*         old_bottom->d_bag, stack->bot->d_bag); */
+      if (NULL == stack->bot->d_bag && NULL != old_bottom->d_bag) {
+        stack->bot->d_bag = DisjointSet_find_set(old_bottom->d_bag);
+        stack->bot->d_bag->type = D;
+      } else if (NULL != old_bottom->d_bag) {
+        DisjointSet_combine(stack->bot->d_bag, old_bottom->d_bag);
+        stack->bot->d_bag->type = D;
       }
-      assert(NULL == stack->bot->sp_bag || SP == stack->bot->sp_bag->type);
+      assert(NULL == stack->bot->d_bag || D == stack->bot->d_bag->type);
+
+      /* fprintf(stderr, "combining R bags %p and %p\n", */
+      /*         stack->bot->r_bag, old_bottom->r_bag); */
+      if (stack->bot->local_spawns == 0) {
+        // Combine SS bags
+        DisjointSet_combine(stack->bot->r_bag, old_bottom->r_bag);
+      } else {
+        // Combine returning SS bag into its parent's SP bag
+        if (NULL == stack->bot->d_bag) {
+          stack->bot->d_bag = DisjointSet_find_set(old_bottom->r_bag);
+          stack->bot->d_bag->type = D;
+        } else {
+          DisjointSet_combine(stack->bot->d_bag, old_bottom->r_bag);
+          stack->bot->d_bag->type = D;
+        }          
+      }
       break;
     case HELPER:  // Returning from spawned function
 #if TRACE_CALLS
       fprintf(stderr, "cilk_leave_begin(%p) from HELPER\n", sf);
 #endif
-      /* fprintf(stderr, "returning SS bag %p, returning SP bag %p, dest P bag %p\n", */
-      /*         old_bottom->ss_bag, old_bottom->sp_bag, stack->bot->p_bag); */
+      /* fprintf(stderr, "returning R bag %p, returning D bag %p, dest D bag %p\n", */
+      /*         old_bottom->r_bag, old_bottom->d_bag, stack->bot->d_bag); */
 
-      if (NULL == stack->bot->p_bag) {
-        stack->bot->p_bag = DisjointSet_find_set(old_bottom->ss_bag);
-        stack->bot->p_bag->type = P;
+      assert(0 != stack->bot->local_spawns);
+
+      if (NULL == stack->bot->d_bag) {
+        stack->bot->d_bag = DisjointSet_find_set(old_bottom->r_bag);
+        stack->bot->d_bag->type = D;
       } else {
-        DisjointSet_combine(stack->bot->p_bag, old_bottom->ss_bag);
-        stack->bot->p_bag->type = P;
+        DisjointSet_combine(stack->bot->d_bag, old_bottom->r_bag);
+        stack->bot->d_bag->type = D;
       }
-      if (NULL != old_bottom->sp_bag) {
-        DisjointSet_combine(stack->bot->p_bag, old_bottom->sp_bag);
-        stack->bot->p_bag->type = P;
-        assert(P == stack->bot->p_bag->type);
+      if (NULL != old_bottom->d_bag) {
+        DisjointSet_combine(stack->bot->d_bag, old_bottom->d_bag);
+        stack->bot->d_bag->type = D;
       }
       break;
     case MAIN:
@@ -375,19 +387,19 @@ void cilk_set_reducer(void *reducer, void *rip, const char *function, int line) 
   viewread_stack_t *stack = &ctx_stack;
   update_shadowmem(&memory, (reducer_t)reducer, (uintptr_t)rip,
                    stack->bot->ancestor_spawns + stack->bot->local_spawns,
-                   stack->bot->ss_bag);
+                   stack->bot->r_bag);
 }
 
 void cilk_read_reducer(void *reducer, void *rip, const char *function, int line) {
   viewread_stack_t *stack = &ctx_stack;
   reader_t *last_reader = get_reader((reducer_t)reducer, &memory);
   DisjointSet_t *rep = DisjointSet_find_set(last_reader->node);
-  if (SS != rep->type ||
+  if (R != rep->type ||
       last_reader->spawns != stack->bot->ancestor_spawns + stack->bot->local_spawns) {
     fprintf(stderr, "View-read race detected between %p and %p (%s:%d)\n",
             (void*)(last_reader->reader), rip, function, line);
   } else {
-    if (SS == rep->type) {
+    if (R == rep->type) {
       /* fprintf(stderr, "Safe read; rep %p\n", rep); */
       assert(stack->bot->ancestor_spawns + stack->bot->local_spawns == last_reader->spawns);
     } else {
@@ -397,5 +409,5 @@ void cilk_read_reducer(void *reducer, void *rip, const char *function, int line)
   }
   update_shadowmem(&memory, (reducer_t)reducer, (uintptr_t)rip,
                    stack->bot->ancestor_spawns + stack->bot->local_spawns,
-                   stack->bot->ss_bag);
+                   stack->bot->r_bag);
 }

@@ -6,18 +6,17 @@
 
 static uint64_t next_func_id = 1;
 
-/* Enum for types of functions */
+// Enum for types of functions
 typedef enum {
   MAIN,
   CILK,
   HELPER,
 } FunctionType_t;
 
-/* Enum for types of bags */
+// Enum for types of bags
 typedef enum {
-  SS,
-  SP,
-  P,
+  R,
+  D,
 } BagType_t;
 
 typedef struct DisjointSet_t {
@@ -29,22 +28,25 @@ typedef struct DisjointSet_t {
   uint64_t rank;
 } DisjointSet_t;
 
-/* Type for a cilkprof stack frame */
+// Typedef of viewread stack frame
 typedef struct viewread_stack_frame_t {
   FunctionType_t func_type;
 
   uint64_t ancestor_spawns;
   uint64_t local_spawns;
 
-  DisjointSet_t* ss_bag;
-  DisjointSet_t* sp_bag;
-  DisjointSet_t* p_bag;
+  DisjointSet_t* r_bag;
+  DisjointSet_t* d_bag;
+
+  /* DisjointSet_t* ss_bag; */
+  /* DisjointSet_t* sp_bag; */
+  /* DisjointSet_t* p_bag; */
 
   struct viewread_stack_frame_t *parent;
 
 } viewread_stack_frame_t;
 
-/* Type for a cilkprof stack */
+// Type for a viewread stack
 typedef struct {
   /* Flag to indicate whether user code is being executed.  This flag
      is mostly used for debugging. */
@@ -124,14 +126,13 @@ void viewread_stack_frame_init(viewread_stack_frame_t *frame,
   frame->ancestor_spawns = ancestor_spawns;
   frame->local_spawns = 0;
 
-  frame->ss_bag = (DisjointSet_t*)malloc(sizeof(DisjointSet_t));
-  DisjointSet_init(frame->ss_bag);
-  frame->ss_bag->type = SS;
-  frame->ss_bag->init_func_id = next_func_id++;
-  frame->ss_bag->set_func_id = frame->ss_bag->init_func_id;
+  frame->r_bag = (DisjointSet_t*)malloc(sizeof(DisjointSet_t));
+  DisjointSet_init(frame->r_bag);
+  frame->r_bag->type = R;
+  frame->r_bag->init_func_id = next_func_id++;
+  frame->r_bag->set_func_id = frame->r_bag->init_func_id;
 
-  frame->sp_bag = NULL;
-  frame->p_bag = NULL;
+  frame->d_bag = NULL;
 }
 
 

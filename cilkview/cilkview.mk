@@ -1,7 +1,10 @@
-TARGETS := cilkview.o cilkview_perf.o
-SRC := cilkview.c cilkview_perf.c
+CILKVIEW_SRC = cilkview.c cilkview_perf.c
+CILKVIEW_OBJ = $(CILKVIEW_SRC:.c=.o)
+LIBCILKVIEW = $(LIB_DIR)/libcilkview.a
+LIBCILKVIEW_PERF = $(LIB_DIR)/libcilkview_perf.a
 
--include ../include/mk.common
+TARGETS += $(LIBCILKVIEW) $(LIBCILKVIEW_PERF)
+SUFFIXES += cp cvp
 
 ifeq ($(PARALLEL),1)
 CFLAGS += -DSERIAL_TOOL=0 -fcilkplus
@@ -10,14 +13,14 @@ endif
 cilkview.o : # CFLAGS += -flto
 cilkview.o : # LDFLAGS += -lrt
 
-%_cv : LDFLAGS += -lrt
-%_cv : %.o cilkview.o
+%_cv : LDFLAGS += -lrt -I $(LIB_DIR)
+%_cv : %.o $(LIBCILKVIEW)
 
 cilkview_perf.o : # CFLAGS += -flto
 cilkview_perf.o : # LDFLAGS += -lrt -lpfm
 
 %_cvp : LDFLAGS += -lrt -lpfm
-%_cvp : %.o cilkview_perf.o
+%_cvp : %.o $(LIBCILKVIEW_PERF)
 
-clean :
-	rm -f *~ *.o
+cleancilkview :
+	rm -f *~ $(LIBCILKVIEW) $(LIBCILKVIEW_PERF) $(CILKVIEW_OBJ)
