@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <time.h>
 
+// TB: Use this instead of strand_time.h to count strands.  Unlike
+// time, this counts the number of strands encountered, which should
+// be deterministic.
+/* #include "strand_count.h" */
 #include "strand_time.h"
 #include "cc_hashtable.h"
 
@@ -100,6 +104,7 @@ void cilkprof_stack_init(cilkprof_stack_t *stack, FunctionType_t func_type)
   cilkprof_stack_frame_init(new_frame, func_type);
   stack->bot = new_frame;
   stack->wrk_table = cc_hashtable_create();
+  init_strand_ruler(&(stack->strand_ruler));
   stack->in_user_code = false;
 }
 

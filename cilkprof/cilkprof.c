@@ -237,7 +237,7 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* rip)
     stack->in_user_code = false;
   }
 
-  /* Push new frame onto the stack */
+  // Push new frame onto the stack
   cilkprof_stack_push(stack, SPAWNER);
 
   /* stack->bot->rip = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0)); */
@@ -251,9 +251,10 @@ void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
 
   WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_helper_begin(%p, %p)\n", sf, rip); );
 
-  measure_and_add_strand_length(stack);
-
-  stack->in_user_code = false;
+  // We should have reached this after passing a cilk_spawn_or_continue(0)
+  assert(!stack->in_user_code);
+  /* measure_and_add_strand_length(stack); */
+  /* stack->in_user_code = false; */
 
   // Push new frame onto the stack
   cilkprof_stack_push(stack, HELPER);

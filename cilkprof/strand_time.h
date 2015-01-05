@@ -1,6 +1,7 @@
 #ifndef INCLUDED_STRAND_TIME_DOT_H
 #define INCLUDED_STRAND_TIME_DOT_H
 
+#include <stdio.h>
 #include <time.h>
 
 typedef struct strand_ruler_t {
@@ -18,10 +19,16 @@ static inline void gettime(struct timespec *timer) {
 }
 
 // Get the number of nanoseconds elapsed between STOP and START.
-static inline uint64_t elapsed_nsec(const struct timespec *stop,
-                                    const struct timespec *start) {
+static inline uint64_t elapsed_nsec(const struct timespec *start,
+                                    const struct timespec *stop) {
+  /* fprintf(stderr, "stop (%lu %lu), start: (%lu %lu)\n", */
+  /*         stop->tv_sec, stop->tv_nsec, start->tv_sec, start->tv_nsec); */
   return (uint64_t)(stop->tv_sec - start->tv_sec) * 1000000000ll
     + (stop->tv_nsec - start->tv_nsec);
+}
+
+static inline void init_strand_ruler(strand_ruler_t *strand_ruler) {
+  return;
 }
 
 static inline void start_strand(strand_ruler_t *strand_ruler) {
