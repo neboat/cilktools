@@ -14,6 +14,8 @@ TOOL ?= CILKPROF
 CFLAGS += $(APPFLAGS)
 CXXFLAGS += $(APPFLAGS)
 
+INCLUDE_DIR = .
+
 fib: fib.o
 fib-serial: fib-serial.o 
 fibx: fibx.o

@@ -83,6 +83,45 @@ void read_proc_maps(void) {
   fclose(f);
 }
 
+// The user of this function should free the char * returned after you are
+// done with the info.
+char* get_info_on_inst_addr(uint64_t addr, int *line_no, char **file) {
+
+  mapping_list_el_t *map_lst_el = maps.head;
+  while (NULL != map_lst_el) {
+    mapping_t *map = &(map_lst_el->map);
+    if (map->low <= addr && addr < map->high) {
+      unsigned long off = addr - map->low;
+      const char *path = map->path;
+      bool is_so = strcmp(".so", path+strlen(path)-3) == 0;
+      char *command;
+      if (is_so) {
+        asprintf(&command, "echo %lx | addr2line -e %s", off, path);
+      } else {
+        asprintf(&command, "echo %lx | addr2line -e %s", addr, path);
+      }
+      FILE *afile = popen(command, "r");
+      char *line = NULL;
+      if (afile) {
+        size_t linelen = -1; // max size
+        if (getline(&line, &linelen, afile)>=0) {
+          *file = strtok(line, ":");
+          const char *lno = strtok(NULL, ":");
+          *line_no = atoi(lno);
+        }
+        // if (line) free(line);
+        pclose(afile);
+      }
+      free(command);
+      return line;
+    }
+    map_lst_el = map_lst_el->next;
+  }
+
+  fprintf(stderr, "%lu is not in range\n", addr);
+  return NULL;
+}
+
 void print_addr(uintptr_t a) {
   uintptr_t ai = a;
   /* if (1) printf(" PC= %lx\n", a); */

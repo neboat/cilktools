@@ -21,6 +21,10 @@
 #define SERIAL_TOOL 1
 #endif
 
+#ifndef OLD_PRINTOUT 
+#define OLD_PRINTOUT 0
+#endif
+
 #ifndef TRACE_CALLS
 #define TRACE_CALLS 0
 #endif
@@ -31,6 +35,9 @@
 #define GET_STACK(ex) REDUCER_VIEW(ex)
 #include "cilkprof_stack_reducer.h"
 #endif
+
+#include <libgen.h>
+
 
 // TB: Adjusted so I can terminate WHEN_TRACE_CALLS() with semicolons.
 // Emacs gets confused about tabbing otherwise.
@@ -134,7 +141,11 @@ void cilk_tool_destroy(void) {
   }
 }
 
+
 void cilk_tool_print(void) {
+  FILE *fout = stdout; 
+  // FILE *fout = fopen("cilkprof.csv", "w"); 
+
   WHEN_TRACE_CALLS( fprintf(stderr, "cilk_tool_print()\n"); );
 
   assert(TOOL_INITIALIZED);
@@ -153,17 +164,23 @@ void cilk_tool_print(void) {
   flush_cc_hashtable(&(stack->bot->prefix_table));
 
   cc_hashtable_t* span_table = stack->bot->prefix_table;
-  fprintf(stderr, "span_table->list_size = %d, span_table->table_size = %d, span_table->lg_capacity = %d\n",
+  fprintf(stderr, 
+          "span_table->list_size = %d, span_table->table_size = %d, span_table->lg_capacity = %d\n",
   	  span_table->list_size, span_table->table_size, span_table->lg_capacity);
 
   uint64_t work = stack->bot->running_wrk;
   flush_cc_hashtable(&(stack->wrk_table));
   cc_hashtable_t* work_table = stack->wrk_table;
-  fprintf(stderr, "work_table->list_size = %d, work_table->table_size = %d, work_table->lg_capacity = %d\n",
+  fprintf(stderr, 
+          "work_table->list_size = %d, work_table->table_size = %d, work_table->lg_capacity = %d\n",
   	  work_table->list_size, work_table->table_size, work_table->lg_capacity);
 
   // Read the proc maps list
   read_proc_maps();
+
+  // print the header for the csv file
+  fprintf(fout, "file, line, call sites (rip), height, ");
+  fprintf(fout, "work on work, span ok work, work on span, span on span\n");
 
   // Parse tables
   size_t span_table_entries_read = 0;
@@ -188,10 +205,23 @@ void cilk_tool_print(void) {
 	}
       }
 
+#if OLD_PRINTOUT
       fprintf(stdout, "%lx:%d ", rip2cc(entry->rip), entry->height);
       print_addr(rip2cc(entry->rip));
       fprintf(stdout, " %lu %lu %lu %lu\n",
 	      wrk_wrk, spn_wrk, wrk_spn, spn_spn);
+#endif
+      int line = 0; 
+      char *fstr = NULL;
+      uint64_t addr = rip2cc(entry->rip);
+
+      // get_info_on_inst_addr returns a char array from some system call that
+      // needs to get freed by the user after we are done with the info
+      char *line_to_free = get_info_on_inst_addr(addr, &line, &fstr);
+      char *file = basename(fstr);
+      fprintf(fout, "%s, %d, %lx, %d, ", file, line, addr, entry->height);
+      fprintf(fout, "%lu, %lu, %lu, %lu\n", wrk_wrk, spn_wrk, wrk_spn, spn_spn);
+      if(line_to_free) free(line_to_free);
     }
   }
 
