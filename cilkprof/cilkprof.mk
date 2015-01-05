@@ -1,5 +1,5 @@
 LIBCILKPROF = $(LIB_DIR)/libcilkprof.a
-CILKPROF_SRC = cilkprof.c span_hashtable.c comp_hashtable.c
+CILKPROF_SRC = cilkprof.c # span_hashtable.c comp_hashtable.c
 CILKPROF_OBJ = $(CILKPROF_SRC:.c=.o)
 
 -include $(CILKPROF_OBJ:.o=.d)
