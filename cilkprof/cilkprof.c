@@ -143,8 +143,8 @@ void cilk_tool_destroy(void) {
 
 
 void cilk_tool_print(void) {
-  FILE *fout = stdout; 
-  // FILE *fout = fopen("cilkprof.csv", "w"); 
+  // FILE *fout = stdout; 
+  FILE *fout = fopen("cilkprof.csv", "w"); 
 
   WHEN_TRACE_CALLS( fprintf(stderr, "cilk_tool_print()\n"); );
 
@@ -219,11 +219,12 @@ void cilk_tool_print(void) {
       // needs to get freed by the user after we are done with the info
       char *line_to_free = get_info_on_inst_addr(addr, &line, &fstr);
       char *file = basename(fstr);
-      fprintf(fout, "%s, %d, %lx, %d, ", file, line, addr, entry->height);
+      fprintf(fout, "\"%s\", %d, %lx, %d, ", file, line, addr, entry->height);
       fprintf(fout, "%lu, %lu, %lu, %lu\n", wrk_wrk, spn_wrk, wrk_spn, spn_spn);
       if(line_to_free) free(line_to_free);
     }
   }
+  fclose(fout);
 
   fprintf(stderr, "work = %fs, span = %fs, parallelism = %f\n",
 	  work / (1000000000.0),
