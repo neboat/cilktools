@@ -3,12 +3,13 @@
 COMPILER ?= LLVM
 
 COMPILERS_HOME = $(HOME)/compilers
+
 CC = gcc
 CXX = g++
 BASIC_CFLAGS = -O1 -Wall -g
 BASIC_CXXFLAGS=$(BASIC_CFLAGS)
 TOOLFLAGS = -I $(INCLUDE_DIR)
-APPFLAGS = -fcilkplus -g
+APPFLAGS = -fcilkplus
 CFLAGS=$(BASIC_CFLAGS) -std=gnu11 $(TOOLFLAGS)
 CXXFLAGS=$(BASIC_CXXFLAGS) -std=gnu++11 $(TOOLFLAGS)
 LDFLAGS= -L $(LIB_DIR)
@@ -69,7 +70,10 @@ $(LIB_DIR) :
 	$(CXX) $(CXXFLAGS) -c $<
 
 $(LIB_DIR)/lib%.a : %.o | $(LIB_DIR)
-	ar -rv $@ $<
+	ar rcs $@ $^
 
-%_% :
-	$(CC) $(CFLAGS) $(LDFLAGS) $(LDLIBS) $^ -o $@
+$(LIB_DIR)/lib%.so : %.o | $(LIB_DIR)
+	$(CC) $^ -shared -o $@
+
+# %_% :
+# 	$(CC) $(CFLAGS) $(LDFLAGS) $(LDLIBS) $^ -o $@

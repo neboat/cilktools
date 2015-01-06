@@ -1,11 +1,16 @@
 BASENAME ?= $(shell basename $(CURDIR))
 
 LIB_DIR = ../lib/
-
--include ../include/mk.common
--include $(BASENAME).mk
+INCLUDE_DIR = ../include
 
 .PHONY : default clean
+
+default :
+
+include $(INCLUDE_DIR)/mk.common
+include $(BASENAME).mk
+
+TARGETS = $(LIBCILKSAN) $(LTLIBCILKSAN)
 
 default : $(TARGETS)
 

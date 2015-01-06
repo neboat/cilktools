@@ -11,8 +11,14 @@ LIBRARIES = $(patsubst %,$(LIB_DIR)/lib%.a,$(TOOLS))
 
 default :
 
--include $(INCLUDE_DIR)/mk.common
+include $(INCLUDE_DIR)/mk.common
 
+ifneq (,$(TOOL))
+default : $(LIB_DIR)/lib$(TOOL).a
+TOOL_LC = $(shell echo $(TOOL) | tr A-Z a-z)
+include $(TOOL_LC)/$(TOOL_LC).mk
+else
 $(foreach tool,$(TOOLS),$(eval -include $(tool)/$(tool).mk))
+endif
 
 clean : $(patsubst %,clean%,$(TOOLS))
