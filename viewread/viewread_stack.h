@@ -15,8 +15,9 @@ typedef enum {
 
 // Enum for types of bags
 typedef enum {
-  R,
-  D,
+  SS,
+  SP,
+  P,
 } BagType_t;
 
 typedef struct DisjointSet_t {
@@ -35,12 +36,9 @@ typedef struct viewread_stack_frame_t {
   uint64_t ancestor_spawns;
   uint64_t local_spawns;
 
-  DisjointSet_t* r_bag;
-  DisjointSet_t* d_bag;
-
-  /* DisjointSet_t* ss_bag; */
-  /* DisjointSet_t* sp_bag; */
-  /* DisjointSet_t* p_bag; */
+  DisjointSet_t* ss_bag;
+  DisjointSet_t* sp_bag;
+  DisjointSet_t* p_bag;
 
   struct viewread_stack_frame_t *parent;
 
@@ -115,7 +113,7 @@ void DisjointSet_combine(DisjointSet_t *s, DisjointSet_t *t) {
 }
 
 
-/* Initializes the viewread stack frame *frame */
+// Initializes the viewread stack frame *frame
 void viewread_stack_frame_init(viewread_stack_frame_t *frame,
                                FunctionType_t func_type,
                                uint64_t ancestor_spawns)
@@ -126,17 +124,18 @@ void viewread_stack_frame_init(viewread_stack_frame_t *frame,
   frame->ancestor_spawns = ancestor_spawns;
   frame->local_spawns = 0;
 
-  frame->r_bag = (DisjointSet_t*)malloc(sizeof(DisjointSet_t));
-  DisjointSet_init(frame->r_bag);
-  frame->r_bag->type = R;
-  frame->r_bag->init_func_id = next_func_id++;
-  frame->r_bag->set_func_id = frame->r_bag->init_func_id;
+  frame->ss_bag = (DisjointSet_t*)malloc(sizeof(DisjointSet_t));
+  DisjointSet_init(frame->ss_bag);
+  frame->ss_bag->type = SS;
+  frame->ss_bag->init_func_id = next_func_id++;
+  frame->ss_bag->set_func_id = frame->ss_bag->init_func_id;
 
-  frame->d_bag = NULL;
+  frame->sp_bag = NULL;
+  frame->p_bag = NULL;
 }
 
 
-/* Initializes the viewread stack */
+// Initializes the viewread stack
 void viewread_stack_init(viewread_stack_t *stack, FunctionType_t func_type)
 {
   viewread_stack_frame_t *new_frame
@@ -147,15 +146,30 @@ void viewread_stack_init(viewread_stack_t *stack, FunctionType_t func_type)
 }
 
 
-/* Push new frame of function type func_type onto the stack *stack */
+// Push new frame of function type func_type onto the stack *stack
 viewread_stack_frame_t* viewread_stack_push(viewread_stack_t *stack,
                                             FunctionType_t func_type)
 {
   viewread_stack_frame_t *new_frame
       = (viewread_stack_frame_t *)malloc(sizeof(viewread_stack_frame_t));
+
   if (HELPER == func_type) {  // Function was spawned
-    stack->bot->local_spawns++;
+    ++stack->bot->local_spawns;
+    
+    /* fprintf(stderr, "P bag %p, SP bag %p\n", */
+    /*         stack->bot->p_bag, stack->bot->sp_bag); */
+
+    if (NULL == stack->bot->p_bag && NULL != stack->bot->sp_bag) {
+      stack->bot->p_bag = DisjointSet_find_set(stack->bot->sp_bag);
+      stack->bot->p_bag->type = P;
+      stack->bot->sp_bag = NULL;
+    } else if (NULL != stack->bot->sp_bag) {
+      DisjointSet_combine(stack->bot->p_bag, stack->bot->sp_bag);
+      stack->bot->p_bag->type = P;
+      stack->bot->sp_bag = NULL;
+    }
   }
+
   // Initialize the new frame, using the current frame's current view
   // ID as the inital and current view ID of the new frame.
   viewread_stack_frame_init(new_frame, func_type,
@@ -167,8 +181,8 @@ viewread_stack_frame_t* viewread_stack_push(viewread_stack_t *stack,
 }
 
 
-/* Pops the bottommost frame off of the stack *stack, and returns a
-   pointer to it. */
+// Pops the bottommost frame off of the stack *stack, and returns a
+// pointer to it.
 viewread_stack_frame_t* viewread_stack_pop(viewread_stack_t *stack)
 {
   viewread_stack_frame_t *old_bottom = stack->bot;
