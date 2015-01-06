@@ -1,5 +1,6 @@
 ifneq (,$(TOOL))
-LDLIBS += -l$(TOOL)
+TOOL_LC = $(shell echo $(TOOL) | tr A-Z a-z)
+include $(TOOL_HOME)/$(TOOL_LC)/appflags.mk
 endif
 
 .PHONY : clean$(TEST)
