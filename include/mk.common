@@ -7,24 +7,29 @@ COMPILERS_HOME = $(HOME)/compilers
 CC = gcc
 CXX = g++
 BASIC_CFLAGS = -O1 -Wall -g
-BASIC_CXXFLAGS=$(BASIC_CFLAGS)
-TOOLFLAGS = -I $(INCLUDE_DIR)
-APPFLAGS = -fcilkplus
-CFLAGS=$(BASIC_CFLAGS) -std=gnu11 $(TOOLFLAGS)
-CXXFLAGS=$(BASIC_CXXFLAGS) -std=gnu++11 $(TOOLFLAGS)
-LDFLAGS= -L $(LIB_DIR)
-#LDLIBS=-g
+BASIC_CXXFLAGS = $(BASIC_CFLAGS)
+CFLAGS = $(BASIC_CFLAGS) -std=gnu11 -I $(INCLUDE_DIR)
+CXXFLAGS = $(BASIC_CXXFLAGS) -std=gnu++11 -I $(INCLUDE_DIR)
+LDFLAGS = -L $(LIB_DIR)
+LDLIBS =
+
+TOOL_CFLAGS =
+TOOL_LDFLAGS =
+TOOL_LDLIBS =
+
+APP_CFLAGS = -fcilkplus
+APP_LDFLAGS =
+APP_LDLIBS = -l:libcilkrts.a -lpthread -ldl
 
 ifeq ($(COMPILER),LLVM)
 COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilk-ok
 CC = $(COMPILER_ROOT)/bin/clang
 CXX = $(COMPILER_ROOT)/bin/clang++
-LDFLAGS += -ldl
 else ifeq ($(COMPILER),GCC)
 COMPILER_ROOT = $(COMPILERS_HOME)/gcc-supertech
 CC = $(COMPILER_ROOT)/bin/gcc
 CXX = $(COMPILER_ROOT)/bin/g++
-APPFLAGS += -fcilktool
+APP_CFLAGS += -fcilktool
 endif
 
 ## Each C source file will have a corresponding file of prerequisites.

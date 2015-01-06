@@ -1,2 +1,2 @@
-APPFLAGS += -fcilktool-instr-c
+CFLAGS += -fcilktool-instr-c
 LDLIBS += -lcilkprof -lrt

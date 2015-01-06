@@ -1,2 +1,2 @@
-APPFLAGS += -fsanitize=thread
+CFLAGS += -fsanitize=thread
 LDLIBS += -lcilksan

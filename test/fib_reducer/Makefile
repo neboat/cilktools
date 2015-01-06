@@ -1,9 +1,12 @@
-LIB_DIR = ../../lib
-INCLUDE_DIR = ../../include
+TOOL_HOME ?= ../..
+LIB_DIR ?= $(TOOL_HOME)/lib
+INCLUDE_DIR ?= $(TOOL_HOME)/include
 
 TEST = fib
 
 default : $(TEST)
 
--include $(INCLUDE_DIR)/mk.common
--include ../test.mk
+include $(INCLUDE_DIR)/mk.common
+include ../test.mk
+
+-include $(TEST).d

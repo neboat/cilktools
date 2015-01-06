@@ -4,6 +4,10 @@ VIEWREAD_OBJ = $(VIEWREAD_SRC:.c=.o)
 
 -include $(VIEWREAD_OBJ:.o=.d)
 
+CFLAGS += $(TOOL_CFLAGS)
+LDFLAGS += $(TOOL_LDFLAGS)
+LDLIBS += $(TOOL_LDLIBS)
+
 .PHONY : cleanviewread
 
 default : $(LIBVIEWREAD)

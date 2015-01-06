@@ -4,8 +4,11 @@ LTLIBCILKSAN := $(LIB_DIR)/libcilksan.so
 CILKSAN_SRC := cilksan.cpp debug_util.cpp mem_access.cpp driver.cpp print_addr.cpp
 CILKSAN_OBJ := $(CILKSAN_SRC:.cpp=.o)
 
-CILKSAN_CFLAGS = -fPIC
+CILKSAN_CFLAGS = $(TOOL_CFLAGS) -fPIC
 CILKSAN_CXXFLAGS = $(CILKSAN_CFLAGS)
+
+LDFLAGS += $(TOOL_LDFLAGS)
+LDLIBS += $(TOOL_LDLIBS)
 
 ifeq ($(COMPILER),LLVM)
 COMPILER_RT_DIR=$(COMPILER_ROOT)/src/projects/compiler-rt
@@ -18,6 +21,8 @@ CILKSAN_CXXFLAGS += $(LIB_CFLAGS)
 # LIB_CFLAGS += -I $(COMPILER_ROOT)-src/libsanitizer -I$(COMPILER_ROOT)-src/libcilkrts/include 
 # LIB_CXXFLAGS += $(LIB_CFLAGS)
 endif
+
+.PHONY : cleancilksan
 
 $(LTLIBCILKSAN) $(LIBCILKSAN) : $(CILKSAN_OBJ)
 $(LTLIBCILKSAN) $(LIBCILKSAN) : CFLAGS += $(CILKSAN_CFLAGS)

@@ -8,11 +8,15 @@ matmul nqueens rectmul strassen qsort foo throw
 COMPILER ?= LLVM
 TOOL ?= CILKPROF
 
--include ../../include/mk.common
--include ../../include/tool.mk
+TOOL_HOME ?= ../..
+LIB_DIR ?= $(TOOL_HOME)/lib
+INCLUDE_DIR ?= $(TOOL_HOME)/include
 
-CFLAGS += $(APPFLAGS)
-CXXFLAGS += $(APPFLAGS)
+include $(INCLUDE_DIR)/mk.common
+include $(INCLUDE_DIR)/tool.mk
+
+CFLAGS += $(APP_CFLAGS)
+CXXFLAGS += $(APP_CFLAGS)
 
 INCLUDE_DIR = .
 

@@ -1,8 +1,13 @@
 LIBCILKPROF = $(LIB_DIR)/libcilkprof.a
+
 CILKPROF_SRC = cilkprof.c # span_hashtable.c comp_hashtable.c
 CILKPROF_OBJ = $(CILKPROF_SRC:.c=.o)
 
 -include $(CILKPROF_OBJ:.o=.d)
+
+CFLAGS += $(TOOL_CFLAGS)
+LDFLAGS += $(TOOL_LDFLAGS)
+LDLIBS += $(TOOL_LDLIBS)
 
 ifeq ($(PARALLEL),1)
 CFLAGS += -DSERIAL_TOOL=0 -fcilkplus

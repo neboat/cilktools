@@ -1,7 +1,14 @@
-BASENAME ?= $(shell basename $(CURDIR))
+TOOL_HOME ?= ../..
+LIB_DIR ?= $(TOOL_HOME)/lib
+INCLUDE_DIR ?= $(TOOL_HOME)/include
 
-# LIB_DIR = ../../lib
+TEST = quicksort
 
--include $(BASENAME).mk
--include ../../cilkprof/cilkprof.mk
--include ../../cilkview/cilkview.mk
+default : $(TEST)
+
+$(TEST) : CC=$(CXX)
+
+include $(INCLUDE_DIR)/mk.common
+include ../test.mk
+
+-include $(TEST).d
