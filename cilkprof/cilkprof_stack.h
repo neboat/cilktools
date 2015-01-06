@@ -24,8 +24,8 @@ typedef struct cilkprof_stack_frame_t {
   // Function type
   FunctionType_t func_type;
 
-  // Height of the function
-  int32_t height;
+  // Depth of the function
+  int32_t depth;
 
   // Return address of this function
   uintptr_t rip;
@@ -83,7 +83,7 @@ void cilkprof_stack_frame_init(cilkprof_stack_frame_t *frame, FunctionType_t fun
   frame->parent = NULL;
   frame->func_type = func_type;
   frame->rip = 0;  // (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
-  frame->height = 0;
+  frame->depth = 0;
 
   frame->running_wrk = 0;
 
@@ -117,6 +117,9 @@ cilkprof_stack_frame_t* cilkprof_stack_push(cilkprof_stack_t *stack, FunctionTyp
   cilkprof_stack_frame_init(new_frame, func_type);
   new_frame->parent = stack->bot;
   stack->bot = new_frame;
+  if (new_frame->parent) {
+    new_frame->depth = new_frame->parent->depth + 1;
+  }
 
   return new_frame;
 }
@@ -128,9 +131,9 @@ cilkprof_stack_frame_t* cilkprof_stack_pop(cilkprof_stack_t *stack)
 {
   cilkprof_stack_frame_t *old_bottom = stack->bot;
   stack->bot = stack->bot->parent;
-  if (stack->bot && stack->bot->height < old_bottom->height + 1) {
-    stack->bot->height = old_bottom->height + 1;
-  }
+  // if (stack->bot && stack->bot->height < old_bottom->height + 1) {
+  //  stack->bot->height = old_bottom->height + 1;
+  // }
 
   return old_bottom;
 }

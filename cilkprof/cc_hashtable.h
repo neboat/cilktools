@@ -13,8 +13,8 @@
 
 // Structure for a hashtable entry
 typedef struct {
-  // Function height
-  int32_t height;
+  // Function depth 
+  int32_t depth;
 
   // Return address that identifies call site
   uintptr_t rip;
@@ -24,6 +24,9 @@ typedef struct {
 
   // Span associated with rip
   uint64_t spn;
+
+  // Update counts associated with this rip 
+  uint32_t count;
 
 } cc_hashtable_entry_t;
 
@@ -66,7 +69,7 @@ cc_hashtable_t* cc_hashtable_create(void);
 void clear_cc_hashtable(cc_hashtable_t *tab);
 void flush_cc_hashtable(cc_hashtable_t **tab);
 bool add_to_cc_hashtable(cc_hashtable_t **tab,
-			 int32_t height, uintptr_t rip,
+			 int32_t depth, uintptr_t rip,
 			 uint64_t wrk, uint64_t spn);
 cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left,
 				  cc_hashtable_t **right);
@@ -99,12 +102,13 @@ const uint64_t ASEED = 0x8c678e6b;
 const uint64_t BSEED = 0x9c16f733;
 const int MIX_ROUNDS = 4;
 
-static size_t hash(int32_t height, uintptr_t rip, int lg_capacity) {
+static size_t hash(uintptr_t rip, int lg_capacity) {
   uint64_t mask = (1 << lg_capacity) - 1;
   /* uint64_t key = (rip >> TAG_OFFSET) * (height + 1); */
   /* return (size_t)(key & mask); */
 
-  uint64_t key = (uint32_t)(rip >> TAG_OFFSET) + height;
+  // uint64_t key = (uint32_t)(rip >> TAG_OFFSET) + height;
+  uint64_t key = (uint32_t)(rip >> TAG_OFFSET);
   uint32_t h = (uint32_t)((ASEED * key + BSEED) % PRIME);
   for (int i = 0; i < MIX_ROUNDS; ++i) {
     h = h * (2 * h + 1);
@@ -157,18 +161,21 @@ cc_hashtable_t* cc_hashtable_create(void) {
   return cc_hashtable_alloc(START_LG_CAPACITY);
 }
 
+static inline int can_override_entry(cc_hashtable_entry_t *entry, uintptr_t new_rip) {
+  // used to be this:
+  // entry->rip == new_rip && entry->height == new_height
+  return (entry->rip == new_rip);
+}
 
 // Helper function to get the entry in tab corresponding to rip.
 // Returns a pointer to the entry if it can find a place to store it,
 // NULL otherwise.
 static cc_hashtable_entry_t*
-get_cc_hashtable_entry_targeted(int32_t height, uintptr_t rip, cc_hashtable_t *tab) {
+get_cc_hashtable_entry_targeted(uintptr_t rip, cc_hashtable_t *tab) {
   
   assert((uintptr_t)NULL != rip);
 
-  cc_hashtable_entry_t *entry = &(tab->entries[hash(height,
-						    rip,
-						    tab->lg_capacity)]);
+  cc_hashtable_entry_t *entry = &(tab->entries[hash(rip, tab->lg_capacity)]);
 
   assert(entry >= tab->entries && entry < tab->entries + (1 << tab->lg_capacity));
 
@@ -176,9 +183,7 @@ get_cc_hashtable_entry_targeted(int32_t height, uintptr_t rip, cc_hashtable_t *t
   for (disp = 0; disp < min(MAX_DISPLACEMENT, (1 << tab->lg_capacity)); ++disp) {
     /* fprintf(stderr, "get_cc_hashtable_entry_targeted(): disp = %d\n", disp); */
 
-    if (empty_entry_p(entry) ||
-	(entry->rip == rip &&
-	 entry->height == height)) {
+    if (empty_entry_p(entry) || can_override_entry(entry, rip)) {
       break;
     }
     ++entry;
@@ -239,7 +244,7 @@ static cc_hashtable_t* increase_table_capacity(const cc_hashtable_t *tab) {
       /* assert(1 << new_tab->lg_capacity > disp); */
 
       cc_hashtable_entry_t *new
-	= get_cc_hashtable_entry_targeted(old->height, old->rip, new_tab);
+	= get_cc_hashtable_entry_targeted(old->rip, new_tab);
 
       if (NULL == new) {
 	++new_lg_capacity;
@@ -308,11 +313,11 @@ static cc_hashtable_t* increase_table_capacity(const cc_hashtable_t *tab) {
 // Add entry to tab, resizing tab if necessary.  Returns a pointer to
 // the entry if it can find a place to store it, NULL otherwise.
 static cc_hashtable_entry_t*
-get_cc_hashtable_entry(int32_t height, uintptr_t rip, cc_hashtable_t **tab) {
+get_cc_hashtable_entry(uintptr_t rip, cc_hashtable_t **tab) {
   int old_table_cap = 1 << (*tab)->lg_capacity;
 
   cc_hashtable_entry_t *entry;
-  while (NULL == (entry = get_cc_hashtable_entry_targeted(height, rip, *tab))) {
+  while (NULL == (entry = get_cc_hashtable_entry_targeted(rip, *tab))) {
 
     cc_hashtable_t *new_tab = increase_table_capacity(*tab);
 
@@ -386,19 +391,21 @@ static void flush_cc_hashtable_list(cc_hashtable_t **tab) {
     /*   fprintf(stderr, "fluch_cc_hashtable_list: total resize attempts %d\n", attempts); */
     /* } */
 
-    tab_entry = get_cc_hashtable_entry(entry->height, entry->rip, tab);
-
+    tab_entry = get_cc_hashtable_entry(entry->rip, tab);
     assert(NULL != tab_entry);
+    assert(empty_entry_p(tab_entry) || tab_entry->rip == entry->rip);
 
     if (empty_entry_p(tab_entry)) {
-      tab_entry->height = entry->height;
-      tab_entry->rip = entry->rip;
-      tab_entry->wrk = entry->wrk;
-      tab_entry->spn = entry->spn;
+      // the compiler will do a struct copy
+      *tab_entry = *entry;
       ++(*tab)->table_size;
-    } else {
+    } else if (tab_entry->depth == entry->depth) { // same rip and same depth
       tab_entry->wrk += entry->wrk;
       tab_entry->spn += entry->spn;
+      tab_entry->count += 1;
+    } else if(tab_entry->depth > entry->depth) {
+      // replace only if the new entry has smaller depth
+      *tab_entry = *entry;
     }
 
     entries_added++;
@@ -422,7 +429,7 @@ void flush_cc_hashtable(cc_hashtable_t **tab) {
 // Add the given cc_hashtable_entry_t data to **tab.  Returns true if
 // data was successfully added, false otherwise.
 bool add_to_cc_hashtable(cc_hashtable_t **tab,
-			 int32_t height, uintptr_t rip,
+			 int32_t depth, uintptr_t rip,
 			 uint64_t wrk, uint64_t spn) {
 
   if ((*tab)->list_size + (*tab)->table_size
@@ -433,10 +440,11 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
     cc_hashtable_list_el_t *lst_entry =
       (cc_hashtable_list_el_t*)malloc(sizeof(cc_hashtable_list_el_t));
 
-    lst_entry->entry.height = height;
+    lst_entry->entry.depth = depth;
     lst_entry->entry.rip = rip;
     lst_entry->entry.wrk = wrk;
     lst_entry->entry.spn = spn;
+    lst_entry->entry.count = 1;
     lst_entry->next = NULL;
 
     if (NULL == (*tab)->tail) {
@@ -460,21 +468,30 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
     }
 
     // Otherwise, add it to the table directly
-    cc_hashtable_entry_t *entry = get_cc_hashtable_entry(height, rip, tab);
+    cc_hashtable_entry_t *entry = get_cc_hashtable_entry(rip, tab);
+    assert(empty_entry_p(entry) || entry->rip == rip);
 
     if (NULL == entry) {
       return false;
     }
   
     if (empty_entry_p(entry)) {
-      entry->height = height;
+      entry->depth = depth;
       entry->rip = rip;
       entry->wrk = wrk;
       entry->spn = spn;
+      entry->count = 1;
       ++(*tab)->table_size;
-    } else {
+    } else if (entry->depth == depth) { // same rip and same depth
       entry->wrk += wrk;
       entry->spn += spn;
+      entry->count += 1;
+    } else if (entry->depth > depth) { // replace only if new entry has smaller depth
+      assert(entry->rip == rip);
+      entry->depth = depth;
+      entry->wrk = wrk;
+      entry->spn = spn;
+      entry->count = 1;
     }
   }
 
@@ -529,19 +546,21 @@ cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left, cc_hashtable_t **right)
     r_entry = &((*right)->entries[i]);
     if (!empty_entry_p(r_entry)) {
 
-      l_entry = get_cc_hashtable_entry(r_entry->height, r_entry->rip, left);
-
+      l_entry = get_cc_hashtable_entry(r_entry->rip, left);
       assert (NULL != l_entry);
+      assert(empty_entry_p(l_entry) || l_entry->rip == r_entry->rip);
 
       if (empty_entry_p(l_entry)) {
-	l_entry->rip = r_entry->rip;
-	l_entry->height = r_entry->height;
-	l_entry->wrk = r_entry->wrk;
-	l_entry->spn = r_entry->spn;
+        // let the compiler do the struct copy
+        *l_entry = *r_entry;
 	++(*left)->table_size;
-      } else {
+      } else if (l_entry->depth == r_entry->depth) { // same rip same depth
 	l_entry->wrk += r_entry->wrk;
 	l_entry->spn += r_entry->spn;
+	l_entry->count += 1;
+      } else if (l_entry->depth > r_entry->depth) { 
+        // replace only if the right entry has smaller depth
+        *l_entry = *r_entry;
       }
     }
   }

@@ -1,6 +1,6 @@
 BASENAME ?= $(shell basename $(CURDIR))
 
-LIB_DIR = ../../lib
+# LIB_DIR = ../../lib
 
 -include $(BASENAME).mk
 -include ../../cilkprof/cilkprof.mk

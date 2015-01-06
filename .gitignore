@@ -3,3 +3,4 @@
 *.d*
 *.o
 cilksan/libcilksan.a
+lib

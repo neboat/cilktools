@@ -4,14 +4,15 @@ TOOL_HOME = $(HOME)/sandbox/cilk_ok/cilktools
 CILKRTS_STATIC_LIB=$(CILKRTS_HOME)/lib/libcilkrts.a
 # Use this for dynamic linking of cilkrts in LDFLAGS
 # CILKRTS_DYNAMIC_LIB=-Wl,-rpath -Wl,$(CILKRTS_HOME)/lib -lcilkrts
-LDFLAGS = $(CILKRTS_STATIC_LIB)
+LDFLAGS = $(CILKRTS_STATIC_LIB) $(CILKTOOL_STATIC_LIB)
 LDLIBS= -lrt -ldl -lpthread
 TOOLFLAGS += -I$(TOOL_HOME)/include
 
 ifeq ($(TOOL),CILKPROF)
 	BASIC_CFLAGS += -DCILKPROF=1 -DCILKSAN=0
 	APPFLAGS += -fcilktool-instr-c
-        TOOL_TARGET = $(TOOL_HOME)/cilkprof/cilkprof.o
+        # TOOL_TARGET = $(TOOL_HOME)/cilkprof/cilkprof.o
+        TOOL_TARGET = $(TOOL_HOME)/lib/libcilkprof.a
 else ifeq ($(TOOL),CILKSAN)
 	TOOLFLAGS += -I$(TOOL_HOME)/cilksan -fsanitize=thread
 	BASIC_CFLAGS += -DCILKPROF=0 -DCILKSAN=1

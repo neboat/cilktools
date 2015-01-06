@@ -10,6 +10,7 @@
 #include <inttypes.h>
 #include <assert.h>
 
+#include <float.h>
 #include <unistd.h>
 #include <sys/types.h>
 
@@ -179,8 +180,9 @@ void cilk_tool_print(void) {
   read_proc_maps();
 
   // print the header for the csv file
-  fprintf(fout, "file, line, call sites (rip), height, ");
-  fprintf(fout, "work on work, span ok work, work on span, span on span\n");
+  fprintf(fout, "file, line, call sites (rip), depth, ");
+  fprintf(fout, "work on work, span ok work, parallelism on work, ");
+  fprintf(fout, "work on span, span on span, parallelism on span \n");
 
   // Parse tables
   size_t span_table_entries_read = 0;
@@ -189,24 +191,25 @@ void cilk_tool_print(void) {
     if (!empty_entry_p(entry)) {
       uint64_t wrk_wrk = entry->wrk;
       uint64_t spn_wrk = entry->spn;
+      double par_wrk = (double)entry->wrk/(double)entry->spn;
       uint64_t wrk_spn = 0;
       uint64_t spn_spn = 0;
+      double par_spn = DBL_MAX;
 
-      for (size_t j = 0; j < (1 << span_table->lg_capacity); ++j) {
-	cc_hashtable_entry_t *st_entry = &(span_table->entries[j]);
-	if (empty_entry_p(st_entry)) {
-	  continue;
-	}
-	if (st_entry->rip == entry->rip &&
-	    st_entry->height == entry->height) {
+      cc_hashtable_entry_t *st_entry = 
+          get_cc_hashtable_entry_targeted(entry->rip, span_table);
+      if(st_entry && !empty_entry_p(st_entry)) {
+          assert(st_entry->depth >= entry->depth);
 	  ++span_table_entries_read;
-	  wrk_spn = st_entry->wrk;
-	  spn_spn = st_entry->spn;
-	}
+          if(st_entry->depth == entry->depth) {
+            wrk_spn = st_entry->wrk;
+            spn_spn = st_entry->spn;
+            par_spn = (double)wrk_spn / (double)spn_spn;
+          }
       }
 
 #if OLD_PRINTOUT
-      fprintf(stdout, "%lx:%d ", rip2cc(entry->rip), entry->height);
+      fprintf(stdout, "%lx:%d ", rip2cc(entry->rip), entry->depth);
       print_addr(rip2cc(entry->rip));
       fprintf(stdout, " %lu %lu %lu %lu\n",
 	      wrk_wrk, spn_wrk, wrk_spn, spn_spn);
@@ -219,8 +222,9 @@ void cilk_tool_print(void) {
       // needs to get freed by the user after we are done with the info
       char *line_to_free = get_info_on_inst_addr(addr, &line, &fstr);
       char *file = basename(fstr);
-      fprintf(fout, "\"%s\", %d, %lx, %d, ", file, line, addr, entry->height);
-      fprintf(fout, "%lu, %lu, %lu, %lu\n", wrk_wrk, spn_wrk, wrk_spn, spn_spn);
+      fprintf(fout, "\"%s\", %d, 0x%lx, %d, ", file, line, addr, entry->depth);
+      fprintf(fout, "%lu, %lu, %g, %lu, %lu, %g\n", 
+              wrk_wrk, spn_wrk, par_wrk, wrk_spn, spn_spn, par_spn);
       if(line_to_free) free(line_to_free);
     }
   }
@@ -231,7 +235,16 @@ void cilk_tool_print(void) {
 	  span / (1000000000.0),
 	  work / (float)span);
 
-  /* fprintf(stderr, "%ld read, %d size\n", span_table_entries_read, span_table->table_size); */
+  /*
+  fprintf(stderr, "%ld read, %d size\n", span_table_entries_read, span_table->table_size);
+  fprintf(stderr, "Dumping span table:\n");
+  for (size_t j = 0; j < (1 << span_table->lg_capacity); ++j) {
+    cc_hashtable_entry_t *st_entry = &(span_table->entries[j]);
+    if (empty_entry_p(st_entry)) {
+      continue;
+    }
+    fprintf(stderr, "entry %zu: rip %lx, depth %d\n", j, rip2cc(st_entry->rip), st_entry->depth);
+  } */
   assert(span_table_entries_read == span_table->table_size);
 
   // Free the proc maps list
@@ -373,7 +386,7 @@ void cilk_tool_c_function_leave(void *rip)
   // Update work table
   /* fprintf(stderr, "adding to wrk table\n"); */
   add_success = add_to_cc_hashtable(&(stack->wrk_table),
-                                    old_bottom->height,
+                                    old_bottom->depth,
 				    old_bottom->rip,
 				    old_bottom->running_wrk,
 				    old_bottom->contin_spn);
@@ -385,7 +398,7 @@ void cilk_tool_c_function_leave(void *rip)
 
   /* fprintf(stderr, "adding to contin table\n"); */
   add_success = add_to_cc_hashtable(&(stack->bot->contin_table),
-				    old_bottom->height,
+				    old_bottom->depth,
 				    old_bottom->rip,
 				    old_bottom->running_wrk,
 				    old_bottom->contin_spn);
@@ -548,7 +561,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 
     // Update work table
     add_success = add_to_cc_hashtable(&(stack->wrk_table),
-				      old_bottom->height,
+				      old_bottom->depth,
 				      old_bottom->rip,
 				      old_bottom->running_wrk,
 				      old_bottom->prefix_spn);
@@ -566,7 +579,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
     /* fprintf(stderr, "adding to contin table\n"); */
 
     add_success = add_to_cc_hashtable(&(stack->bot->contin_table),
-				      old_bottom->height,
+				      old_bottom->depth,
 				      old_bottom->rip,
 				      old_bottom->running_wrk,
 				      old_bottom->prefix_spn);
@@ -590,7 +603,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 
     // Update running work table
     add_success = add_to_cc_hashtable(&(stack->wrk_table),
-				      old_bottom->height,
+				      old_bottom->depth,
 				      old_bottom->rip,
 				      old_bottom->running_wrk,
 				      old_bottom->prefix_spn);
@@ -612,7 +625,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 
       // Update lchild span table
       add_success = add_to_cc_hashtable(&(stack->bot->lchild_table),
-					old_bottom->height,
+					old_bottom->depth,
 					old_bottom->rip,
 					old_bottom->running_wrk,
 					old_bottom->prefix_spn);
