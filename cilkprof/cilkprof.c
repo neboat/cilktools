@@ -83,6 +83,7 @@ static inline void initialize_tool(cilkprof_stack_t *stack) {
 #endif
   cilkprof_stack_init(stack, MAIN);
   TOOL_INITIALIZED = true;
+  TOOL_PRINTED = false;
 }
 
 __attribute__((always_inline))
@@ -123,7 +124,8 @@ void cilk_tool_init(void) {
   // It could have been done if we instrument C functions, and the user 
   // separately calls cilk_tool_init in the main function.
   if(!TOOL_INITIALIZED) {
-    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_tool_init()\n"); );
+    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_tool_init() [ret %p]\n",
+                              __builtin_extract_return_addr(__builtin_return_address(0))); );
 
     initialize_tool(&GET_STACK(ctx_stack));
 
@@ -142,7 +144,8 @@ void cilk_tool_destroy(void) {
   // It could have been done if we instrument C functions, and the user 
   // separately calls cilk_tool_destroy in the main function.
   if(TOOL_INITIALIZED) {
-    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_tool_destroy()\n"); );
+    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_tool_destroy() [ret %p]\n",
+                              __builtin_extract_return_addr(__builtin_return_address(0))); );
 
     cilkprof_stack_t *stack = &GET_STACK(ctx_stack);
     // Print the output, if we haven't done so already
@@ -373,6 +376,8 @@ void cilk_tool_print(void) {
     free(map_lst_el);
     map_lst_el = next_map_lst_el;
   }
+  maps.head = NULL;
+  maps.tail = NULL;
 
   TOOL_PRINTED = true;
 }
@@ -385,7 +390,8 @@ void cilk_tool_print(void) {
 
 void cilk_enter_begin(__cilkrts_stack_frame *sf, void* rip)
 {
-  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_begin(%p, %p)\n", sf, rip); );
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_begin(%p, %p) [ret %p]\n", sf, rip,
+                            __builtin_extract_return_addr(__builtin_return_address(0))); );
 
   /* fprintf(stderr, "worker %d entering %p\n", __cilkrts_get_worker_number(), sf); */
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
@@ -407,7 +413,6 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* rip)
   // Push new frame onto the stack
   cilkprof_stack_push(stack, SPAWNER);
 
-  /* stack->bot->rip = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0)); */
   stack->bot->rip = (uintptr_t)__builtin_extract_return_addr(rip);
 }
 
@@ -416,20 +421,20 @@ void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
 {
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
-  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_helper_begin(%p, %p)\n", sf, rip); );
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_helper_begin(%p, %p) [ret %p]\n", sf, rip,
+                            __builtin_extract_return_addr(__builtin_return_address(0))); );
 
-  // We should have reached this after passing a cilk_spawn_or_continue(0)
-  assert(!stack->in_user_code);
+  // We should have passed spawn_or_continue(0) to get here.
+  assert(stack->in_user_code);
   // Prologue disabled
-  /* stack->strand_end */
-  /*     = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0)); */
-  /* measure_and_add_strand_length(stack); */
-  /* stack->in_user_code = false; */
+  stack->strand_end
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
+  measure_and_add_strand_length(stack);
+  stack->in_user_code = false;
 
   // Push new frame onto the stack
   cilkprof_stack_push(stack, HELPER);
 
-  /* stack->bot->rip = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0)); */
   stack->bot->rip = (uintptr_t)__builtin_extract_return_addr(rip);
 }
 
@@ -438,9 +443,11 @@ void cilk_enter_end(__cilkrts_stack_frame *sf, void *rsp)
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
   if (SPAWNER == stack->bot->func_type) {
-    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_end(%p, %p) from SPAWNER\n", sf, rsp); );
+    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_end(%p, %p) from SPAWNER [ret %p]\n", sf, rsp,
+                              __builtin_extract_return_addr(__builtin_return_address(0))); );
   } else {
-    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_end(%p, %p) from HELPER\n", sf, rsp); );
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_end(%p, %p) from HELPER [ret %p]\n", sf, rsp,
+                            __builtin_extract_return_addr(__builtin_return_address(0))); );
   }
   assert(!(stack->in_user_code));
 
@@ -463,7 +470,8 @@ void cilk_tool_c_function_enter(void *rip)
 {
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
-  WHEN_TRACE_CALLS( fprintf(stderr, "c_function_enter(%p)\n", rip); );
+  /* WHEN_TRACE_CALLS( fprintf(stderr, "c_function_enter(%p) [ret %p]\n", rip,
+     __builtin_extract_return_addr(__builtin_return_address(0))); ); */
 
   if(!TOOL_INITIALIZED) { // We are entering main.
     cilk_tool_init(); // this will push the frame for MAIN and do a gettime
@@ -471,6 +479,10 @@ void cilk_tool_c_function_enter(void *rip)
         = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
 
   } else {
+    if (!stack->in_user_code) {
+      WHEN_TRACE_CALLS( fprintf(stderr, "c_function_enter(%p) [ret %p]\n", rip,
+                                __builtin_extract_return_addr(__builtin_return_address(0))); );
+    }
     assert(stack->in_user_code);
 
     stack->strand_end
@@ -492,7 +504,8 @@ void cilk_tool_c_function_enter(void *rip)
 
 void cilk_tool_c_function_leave(void *rip)
 {
-  WHEN_TRACE_CALLS( fprintf(stderr, "c_function_leave(%p)\n", rip); );
+  /* WHEN_TRACE_CALLS( fprintf(stderr, "c_function_leave(%p) [ret %p]\n", rip,
+     __builtin_extract_return_addr(__builtin_return_address(0))); ); */
 
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
@@ -582,7 +595,8 @@ void cilk_tool_c_function_leave(void *rip)
 
 void cilk_spawn_prepare(__cilkrts_stack_frame *sf)
 {
-  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_spawn_prepare(%p)\n", sf); );
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_spawn_prepare(%p) [ret %p]\n", sf,
+                            __builtin_extract_return_addr(__builtin_return_address(0))); );
 
   // Tool must have been initialized as this is only called in a SPAWNER, and 
   // we would have at least initialized the tool in the first cilk_enter_begin.
@@ -609,23 +623,33 @@ void cilk_spawn_or_continue(int in_continuation)
   if (in_continuation) {
     // In the continuation
     WHEN_TRACE_CALLS(
-        fprintf(stderr, "cilk_spawn_or_continue(%d) from continuation\n", in_continuation); );
+        fprintf(stderr, "cilk_spawn_or_continue(%d) from continuation [ret %p]\n", in_continuation,
+                __builtin_extract_return_addr(__builtin_return_address(0))); );
     stack->in_user_code = true;
 
     stack->strand_start
       = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
     begin_strand(stack);
-
   } else {
     // In the spawned child
     WHEN_TRACE_CALLS(
-        fprintf(stderr, "cilk_spawn_or_continue(%d) from spawn\n", in_continuation); );
+        fprintf(stderr, "cilk_spawn_or_continue(%d) from spawn [ret %p]\n", in_continuation,
+                __builtin_extract_return_addr(__builtin_return_address(0))); );
+    // We need to re-enter user code, because function calls for
+    // arguments might be called before enter_helper_begin occurs in
+    // spawn helper.
+    stack->in_user_code = true;
+
+    stack->strand_start
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
+    begin_strand(stack);
   }
 }
 
 void cilk_detach_begin(__cilkrts_stack_frame *parent)
 {
-  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_detach_begin(%p)\n", parent); );
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_detach_begin(%p) [ret %p]\n", parent,
+                            __builtin_extract_return_addr(__builtin_return_address(0))); );
 
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
   assert(HELPER == stack->bot->func_type);
@@ -643,7 +667,8 @@ void cilk_detach_begin(__cilkrts_stack_frame *parent)
 
 void cilk_detach_end(void)
 {
-  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_detach_end()\n"); );
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_detach_end() [ret %p]\n",
+                            __builtin_extract_return_addr(__builtin_return_address(0))); );
 
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
   
@@ -667,9 +692,11 @@ void cilk_sync_begin(__cilkrts_stack_frame *sf)
   measure_and_add_strand_length(stack);
 
   if (SPAWNER == stack->bot->func_type) {
-    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_begin(%p) from SPAWNER\n", sf); );
+    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_begin(%p) from SPAWNER [ret %p]\n", sf,
+                              __builtin_extract_return_addr(__builtin_return_address(0))); );
   } else {
-    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_begin(%p) from HELPER\n", sf); );
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_begin(%p) from HELPER [ret %p]\n", sf,
+                            __builtin_extract_return_addr(__builtin_return_address(0))); );
   }
 
   assert(stack->in_user_code);
@@ -701,7 +728,8 @@ void cilk_sync_end(__cilkrts_stack_frame *sf)
   assert(SPAWNER == stack->bot->func_type); 
   assert(!(stack->in_user_code));
   stack->in_user_code = true;
-  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_end(%p) from SPAWNER\n", sf); );
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_end(%p) from SPAWNER [ret %p]\n", sf,
+                            __builtin_extract_return_addr(__builtin_return_address(0))); );
   stack->strand_start
       = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
   begin_strand(stack);
@@ -709,7 +737,8 @@ void cilk_sync_end(__cilkrts_stack_frame *sf)
 
 void cilk_leave_begin(__cilkrts_stack_frame *sf)
 {
-  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_leave_begin(%p)\n", sf); );
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_leave_begin(%p) [ret %p]\n", sf,
+                            __builtin_extract_return_addr(__builtin_return_address(0))); );
 
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
@@ -879,18 +908,22 @@ void cilk_leave_end(void)
 #if TRACE_CALLS
   switch(stack->bot->func_type) {
   case HELPER:
-    fprintf(stderr, "cilk_leave_end() from HELPER\n");
+    fprintf(stderr, "cilk_leave_end() from HELPER [ret %p]\n",
+            __builtin_extract_return_addr(__builtin_return_address(0)));
     break;
   case SPAWNER:
-    fprintf(stderr, "cilk_leave_end() from SPAWNER\n");
+    fprintf(stderr, "cilk_leave_end() from SPAWNER [ret %p]\n",
+            __builtin_extract_return_addr(__builtin_return_address(0)));
     break;
   case MAIN:
-    fprintf(stderr, "cilk_leave_end() from MAIN\n");
+    fprintf(stderr, "cilk_leave_end() from MAIN [ret %p]\n",
+            __builtin_extract_return_addr(__builtin_return_address(0)));
     break;
   case C_FUNCTION:
     // We can have leave_end from C_FUNCTION because leave_begin
     // popped the stack already
-    fprintf(stderr, "cilk_leave_end() from C_FUNCTION\n");
+    fprintf(stderr, "cilk_leave_end() from C_FUNCTION [ret %p]\n",
+            __builtin_extract_return_addr(__builtin_return_address(0)));
     break;
   }
 #endif
