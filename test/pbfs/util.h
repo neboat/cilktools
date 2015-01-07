@@ -153,7 +153,7 @@ CumulativeSum(int* arr, int size)
 int
 parseBinaryFile(const string filename, Graph **graph)
 {
-  int64_t m, n, nnz;
+  int64_t m = 0, n = 0, nnz = 0;
 
   // Read binary CSB matrix input
   // Code and matrices adapted from oskitest.cpp by Aydin Buluc

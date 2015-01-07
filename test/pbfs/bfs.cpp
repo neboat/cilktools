@@ -168,5 +168,10 @@ main (int argc, char** argv)
   default: break;
   }
 
+  // Free memory
+  delete[] testname;
+  delete[] distances;
+  delete graph;
+
   return 0;
 }
