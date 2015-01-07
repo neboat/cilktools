@@ -5,6 +5,10 @@
 #include <inttypes.h>
 #include <assert.h>
 
+#ifndef DEBUG_RESIZE
+#define DEBUG_RESIZE 0
+#endif
+
 static int min(int a, int b) {
   return a < b ? a : b;
 }
@@ -176,7 +180,9 @@ static cc_hashtable_t* increase_table_capacity(const cc_hashtable_t *tab) {
 // the entry if it can find a place to store it, NULL otherwise.
 static cc_hashtable_entry_t*
 get_cc_hashtable_entry(uintptr_t rip, cc_hashtable_t **tab) {
+#if DEBUG_RESIZE
   int old_table_cap = 1 << (*tab)->lg_capacity;
+#endif
 
   cc_hashtable_entry_t *entry;
   while (NULL == (entry = get_cc_hashtable_entry_const(rip, *tab))) {
@@ -192,10 +198,12 @@ get_cc_hashtable_entry(uintptr_t rip, cc_hashtable_t **tab) {
     free(*tab);
     *tab = new_tab;
   }
+#if DEBUG_RESIZE
   if (1 << (*tab)->lg_capacity > 2 * old_table_cap) {
     fprintf(stderr, "get_cc_hashtable_entry: new table capacity %d\n",
     	    1 << (*tab)->lg_capacity);
   }
+#endif
   return entry;
 }
 

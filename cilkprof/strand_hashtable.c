@@ -5,6 +5,10 @@
 #include <inttypes.h>
 #include <assert.h>
 
+#ifndef DEBUG_RESIZE
+#define DEBUG_RESIZE 0
+#endif
+
 static int min(int a, int b) {
   return a < b ? a : b;
 }
@@ -174,7 +178,9 @@ static strand_hashtable_entry_t*
 get_strand_hashtable_entry(uintptr_t start, uintptr_t end,
                            strand_hashtable_t **tab) {
   /* fprintf(stderr, "get_strand_hashtable_entry"); */
+#if DEBUG_RESIZE
   int old_table_cap = 1 << (*tab)->lg_capacity;
+#endif
 
   strand_hashtable_entry_t *entry;
   while (NULL == (entry = get_strand_hashtable_entry_const(start, end, *tab))) {
@@ -190,10 +196,12 @@ get_strand_hashtable_entry(uintptr_t start, uintptr_t end,
     free(*tab);
     *tab = new_tab;
   }
+#if DEBUG_RESIZE
   if (1 << (*tab)->lg_capacity > 2 * old_table_cap) {
     fprintf(stderr, "get_strand_hashtable_entry: new table capacity %d\n",
     	    1 << (*tab)->lg_capacity);
   }
+#endif
   return entry;
 }
 
