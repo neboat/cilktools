@@ -1,12 +1,17 @@
-CC=clang++
-CFLAGS= -g -Wall -O3 -fcilkplus -ldl  # -Werror -falign-functions
-LDFLAGS= -L$(CURDIR)
-AR=ar
+TOOL_HOME ?= ../..
+LIB_DIR ?= $(TOOL_HOME)/lib
+INCLUDE_DIR ?= $(TOOL_HOME)/include
 
-all: bfs
+BFS_SRC = bfs.cpp graph.cpp bag.cpp
+BFS_OBJ = $(BFS_SRC:.cpp=.o)
 
-bfs : bfs.cpp graph.cpp graph.h bag.cpp bag.h util.h Makefile
-	$(CC) $(CFLAGS) $@.cpp $(LDFLAGS) -o $@
+TEST = bfs
 
-clean :
-	rm -f bfs *~
+default : $(TEST)
+
+include $(INCLUDE_DIR)/mk.common
+include ../test.mk
+
+-include $(TEST).d
+
+# CFLAGS += -O3
