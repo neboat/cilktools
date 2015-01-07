@@ -10,6 +10,7 @@
 /* #include "strand_count.h" */
 #include "strand_time.h"
 #include "cc_hashtable.h"
+#include "strand_hashtable.h"
 
 // Types of functions in cilkprof stack
 typedef enum {
@@ -26,7 +27,6 @@ typedef struct cilkprof_stack_frame_t {
 
   // Depth of the function
   int32_t depth;
-
   // Return address of this function
   uintptr_t rip;
 
@@ -38,23 +38,26 @@ typedef struct cilkprof_stack_frame_t {
 
   // Span of the prefix of this function
   uint64_t prefix_spn;
-
   // Data associated with the function's prefix
   cc_hashtable_t* prefix_table;
+  // Strand data associated with prefix
+  strand_hashtable_t* strand_prefix_table;
 
   // Span of the longest spawned child of this function observed so
   // far
   uint64_t lchild_spn;
-
   // Data associated with the function's longest child
   cc_hashtable_t* lchild_table;
+  // Strand data associated with longest child
+  strand_hashtable_t* strand_lchild_table;
 
   // Span of the continuation of the function since the spawn of its
   // longest child
   uint64_t contin_spn;
-
   // Data associated with the function's continuation
   cc_hashtable_t* contin_table;
+  // Strand data associated with continuation
+  strand_hashtable_t* strand_contin_table;
 
 } cilkprof_stack_frame_t;
 
@@ -65,14 +68,20 @@ typedef struct {
   // is mostly used for debugging.
   bool in_user_code;
 
+  // Endpoints of currently executing strand
+  uintptr_t strand_start;
+  uintptr_t strand_end;
+
   // Tool for measuring the length of a strand
   strand_ruler_t strand_ruler;
 
   // Pointer to bottom of the stack, onto which frames are pushed.
   cilkprof_stack_frame_t *bot;
 
-  // Data associated with the running work
+  // Call-site data associated with the running work
   cc_hashtable_t* wrk_table;
+  // Strand data associated with running work
+  strand_hashtable_t* strand_wrk_table;
 
 } cilkprof_stack_t;
 
@@ -89,10 +98,13 @@ void cilkprof_stack_frame_init(cilkprof_stack_frame_t *frame, FunctionType_t fun
 
   frame->prefix_spn = 0;
   frame->prefix_table = cc_hashtable_create();
+  frame->strand_prefix_table = strand_hashtable_create();
   frame->lchild_spn = 0;
   frame->lchild_table = cc_hashtable_create();
+  frame->strand_lchild_table = strand_hashtable_create();
   frame->contin_spn = 0;
   frame->contin_table = cc_hashtable_create();
+  frame->strand_contin_table = strand_hashtable_create();
 }
 
 
@@ -104,6 +116,7 @@ void cilkprof_stack_init(cilkprof_stack_t *stack, FunctionType_t func_type)
   cilkprof_stack_frame_init(new_frame, func_type);
   stack->bot = new_frame;
   stack->wrk_table = cc_hashtable_create();
+  stack->strand_wrk_table = strand_hashtable_create();
   init_strand_ruler(&(stack->strand_ruler));
   stack->in_user_code = false;
 }

@@ -66,6 +66,7 @@ static CILK_C_DECLARE_REDUCER(cilkprof_stack_t) ctx_stack =
 #endif
 
 static bool TOOL_INITIALIZED = false;
+static bool TOOL_PRINTED = false;
 
 /*************************************************************************/
 /**
@@ -84,15 +85,35 @@ static inline void initialize_tool(cilkprof_stack_t *stack) {
   TOOL_INITIALIZED = true;
 }
 
-static inline void measure_and_add_strand_length(cilkprof_stack_t *stack) {
+__attribute__((always_inline))
+void begin_strand(cilkprof_stack_t *stack) {
+  start_strand(&(stack->strand_ruler));
+}
+
+__attribute__((always_inline))
+void measure_and_add_strand_length(cilkprof_stack_t *stack) {
   // Measure strand length
   uint64_t strand_len = measure_strand_length(&(stack->strand_ruler));
-
   assert(NULL != stack->bot);
 
   // Accumulate strand length
   stack->bot->running_wrk += strand_len;
   stack->bot->contin_spn += strand_len;
+
+  // Add strand length to strand_wrk and strand_contin tables
+  /* fprintf(stderr, "start %lx, end %lx\n", stack->strand_start, stack->strand_end); */
+  bool add_success = add_to_strand_hashtable(&(stack->strand_wrk_table),
+                                             stack->strand_start,
+                                             stack->strand_end,
+                                             strand_len,
+                                             strand_len);
+  assert(add_success);
+  add_success = add_to_strand_hashtable(&(stack->bot->strand_contin_table),
+                                        stack->strand_start,
+                                        stack->strand_end,
+                                        strand_len,
+                                        strand_len);
+  assert(add_success);
 }
 
 /*************************************************************************/
@@ -108,7 +129,7 @@ void cilk_tool_init(void) {
 
     GET_STACK(ctx_stack).in_user_code = true;
 
-    start_strand(&(GET_STACK(ctx_stack).strand_ruler));
+    begin_strand(&(GET_STACK(ctx_stack)));
   }
 }
 
@@ -124,6 +145,10 @@ void cilk_tool_destroy(void) {
     WHEN_TRACE_CALLS( fprintf(stderr, "cilk_tool_destroy()\n"); );
 
     cilkprof_stack_t *stack = &GET_STACK(ctx_stack);
+    // Print the output, if we haven't done so already
+    if (!TOOL_PRINTED)
+      cilk_tool_print();
+
     // Pop the stack
     cilkprof_stack_frame_t *old_bottom = cilkprof_stack_pop(stack);
 
@@ -136,6 +161,10 @@ void cilk_tool_destroy(void) {
     free_cc_hashtable(old_bottom->prefix_table);
     free_cc_hashtable(old_bottom->lchild_table);
     free_cc_hashtable(old_bottom->contin_table);
+    free_strand_hashtable(stack->strand_wrk_table);
+    free_strand_hashtable(old_bottom->strand_prefix_table);
+    free_strand_hashtable(old_bottom->strand_lchild_table);
+    free_strand_hashtable(old_bottom->strand_contin_table);
     free(old_bottom);
 
     TOOL_INITIALIZED = false;
@@ -144,8 +173,7 @@ void cilk_tool_destroy(void) {
 
 
 void cilk_tool_print(void) {
-  // FILE *fout = stdout; 
-  FILE *fout = fopen("cilkprof.csv", "w"); 
+  FILE *fout;
 
   WHEN_TRACE_CALLS( fprintf(stderr, "cilk_tool_print()\n"); );
 
@@ -169,6 +197,7 @@ void cilk_tool_print(void) {
           "span_table->list_size = %d, span_table->table_size = %d, span_table->lg_capacity = %d\n",
   	  span_table->list_size, span_table->table_size, span_table->lg_capacity);
 
+
   uint64_t work = stack->bot->running_wrk;
   flush_cc_hashtable(&(stack->wrk_table));
   cc_hashtable_t* work_table = stack->wrk_table;
@@ -179,32 +208,38 @@ void cilk_tool_print(void) {
   // Read the proc maps list
   read_proc_maps();
 
+  // Open call site CSV
+  fout = fopen("cilkprof_cs.csv", "w"); 
+
   // print the header for the csv file
   fprintf(fout, "file, line, call sites (rip), depth, ");
-  fprintf(fout, "work on work, span ok work, parallelism on work, ");
-  fprintf(fout, "work on span, span on span, parallelism on span \n");
+  fprintf(fout, "work on work, span on work, parallelism on work, count on work, ");
+  fprintf(fout, "work on span, span on span, parallelism on span, count on span \n");
 
   // Parse tables
   size_t span_table_entries_read = 0;
   for (size_t i = 0; i < (1 << work_table->lg_capacity); ++i) {
     cc_hashtable_entry_t *entry = &(work_table->entries[i]);
-    if (!empty_entry_p(entry)) {
+    if (!empty_cc_entry_p(entry)) {
       uint64_t wrk_wrk = entry->wrk;
       uint64_t spn_wrk = entry->spn;
       double par_wrk = (double)entry->wrk/(double)entry->spn;
+      uint64_t on_wrk_cnt = entry->count;
       uint64_t wrk_spn = 0;
       uint64_t spn_spn = 0;
       double par_spn = DBL_MAX;
+      uint64_t on_spn_cnt = 0;
 
       cc_hashtable_entry_t *st_entry = 
-          get_cc_hashtable_entry_targeted(entry->rip, span_table);
-      if(st_entry && !empty_entry_p(st_entry)) {
+          get_cc_hashtable_entry_const(entry->rip, span_table);
+      if(st_entry && !empty_cc_entry_p(st_entry)) {
           assert(st_entry->depth >= entry->depth);
 	  ++span_table_entries_read;
           if(st_entry->depth == entry->depth) {
             wrk_spn = st_entry->wrk;
             spn_spn = st_entry->spn;
             par_spn = (double)wrk_spn / (double)spn_spn;
+            on_spn_cnt = st_entry->count;
           }
       }
 
@@ -223,12 +258,96 @@ void cilk_tool_print(void) {
       char *line_to_free = get_info_on_inst_addr(addr, &line, &fstr);
       char *file = basename(fstr);
       fprintf(fout, "\"%s\", %d, 0x%lx, %d, ", file, line, addr, entry->depth);
-      fprintf(fout, "%lu, %lu, %g, %lu, %lu, %g\n", 
-              wrk_wrk, spn_wrk, par_wrk, wrk_spn, spn_spn, par_spn);
+      fprintf(fout, "%lu, %lu, %g, %lu, %lu, %lu, %g, %lu\n", 
+              wrk_wrk, spn_wrk, par_wrk, on_wrk_cnt,
+              wrk_spn, spn_spn, par_spn, on_spn_cnt);
       if(line_to_free) free(line_to_free);
     }
   }
   fclose(fout);
+
+  assert(span_table_entries_read == span_table->table_size);
+
+  // Strand tables
+  add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_contin_table));
+  clear_strand_hashtable(stack->bot->strand_contin_table);
+
+  flush_strand_hashtable(&(stack->bot->strand_prefix_table));
+
+  strand_hashtable_t* strand_span_table = stack->bot->strand_prefix_table;
+  fprintf(stderr, 
+          "strand_span_table->list_size = %d, strand_span_table->table_size = %d, strand_span_table->lg_capacity = %d\n",
+  	  strand_span_table->list_size, strand_span_table->table_size, strand_span_table->lg_capacity);
+
+
+  flush_strand_hashtable(&(stack->strand_wrk_table));
+  strand_hashtable_t* strand_work_table = stack->strand_wrk_table;
+  fprintf(stderr, 
+          "strand_work_table->list_size = %d, strand_work_table->table_size = %d, strand_work_table->lg_capacity = %d\n",
+  	  strand_work_table->list_size, strand_work_table->table_size, strand_work_table->lg_capacity);
+
+  // Open strand CSV
+  fout = fopen("cilkprof_strand.csv", "w"); 
+
+  // print the header for the csv file
+  fprintf(fout, "start file, start line, start rip, end file, end line, end rip, ");
+  fprintf(fout, "work on work, span on work, parallelism on work, count on work, ");
+  fprintf(fout, "work on span, span on span, parallelism on span, count on span \n");
+
+  // Parse tables
+  span_table_entries_read = 0;
+  for (size_t i = 0; i < (1 << strand_work_table->lg_capacity); ++i) {
+    strand_hashtable_entry_t *entry = &(strand_work_table->entries[i]);
+    /* fprintf(stderr, "entry->start %lx, entry->end %lx\n", */
+    /*         entry->start, entry->end); */
+    if (!empty_strand_entry_p(entry)) {
+      uint64_t wrk_wrk = entry->wrk;
+      uint64_t spn_wrk = entry->spn;
+      double par_wrk = (double)entry->wrk/(double)entry->spn;
+      uint64_t on_wrk_cnt = entry->count;
+      uint64_t wrk_spn = 0;
+      uint64_t spn_spn = 0;
+      double par_spn = DBL_MAX;
+      uint64_t on_spn_cnt = 0;
+
+      strand_hashtable_entry_t *st_entry = 
+          get_strand_hashtable_entry_const(entry->start, entry->end, strand_span_table);
+      if(st_entry && !empty_strand_entry_p(st_entry)) {
+	  ++span_table_entries_read;
+          wrk_spn = st_entry->wrk;
+          spn_spn = st_entry->spn;
+          par_spn = (double)wrk_spn / (double)spn_spn;
+          on_spn_cnt = st_entry->count;
+      }
+
+#if OLD_PRINTOUT
+      fprintf(stdout, "%lx:%lx ", rip2cc(entry->start), rip2cc(entry->end));
+      fprintf(stdout, " %lu %lu %lu %lu\n",
+	      wrk_wrk, spn_wrk, wrk_spn, spn_spn);
+#endif
+      int line = 0; 
+      char *fstr = NULL;
+      uint64_t start_addr = rip2cc(entry->start);
+      uint64_t end_addr = rip2cc(entry->end);
+
+      // get_info_on_inst_addr returns a char array from some system call that
+      // needs to get freed by the user after we are done with the info
+      char *line_to_free = get_info_on_inst_addr(start_addr, &line, &fstr);
+      char *file = basename(fstr);
+      fprintf(fout, "\"%s\", %d, 0x%lx, ", file, line, start_addr);
+      if(line_to_free) free(line_to_free);
+      line_to_free = get_info_on_inst_addr(end_addr, &line, &fstr);
+      file = basename(fstr);
+      fprintf(fout, "\"%s\", %d, 0x%lx, ", file, line, end_addr);
+      if(line_to_free) free(line_to_free);
+      fprintf(fout, "%lu, %lu, %g, %lu, %lu, %lu, %g, %lu\n", 
+              wrk_wrk, spn_wrk, par_wrk, on_wrk_cnt,
+              wrk_spn, spn_spn, par_spn, on_spn_cnt);
+    }
+  }
+  fclose(fout);
+
+  assert(span_table_entries_read == strand_span_table->table_size);
 
   fprintf(stderr, "work = %fs, span = %fs, parallelism = %f\n",
 	  work / (1000000000.0),
@@ -240,12 +359,11 @@ void cilk_tool_print(void) {
   fprintf(stderr, "Dumping span table:\n");
   for (size_t j = 0; j < (1 << span_table->lg_capacity); ++j) {
     cc_hashtable_entry_t *st_entry = &(span_table->entries[j]);
-    if (empty_entry_p(st_entry)) {
+    if (empty_cc_entry_p(st_entry)) {
       continue;
     }
     fprintf(stderr, "entry %zu: rip %lx, depth %d\n", j, rip2cc(st_entry->rip), st_entry->depth);
   } */
-  assert(span_table_entries_read == span_table->table_size);
 
   // Free the proc maps list
   mapping_list_el_t *map_lst_el = maps.head;
@@ -255,6 +373,8 @@ void cilk_tool_print(void) {
     free(map_lst_el);
     map_lst_el = next_map_lst_el;
   }
+
+  TOOL_PRINTED = true;
 }
 
 
@@ -276,6 +396,9 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* rip)
   } else {
     stack = &(GET_STACK(ctx_stack));
 
+    // Prologue calls enter_begin
+    stack->strand_end
+        = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(1));
     measure_and_add_strand_length(stack);
 
     stack->in_user_code = false;
@@ -297,6 +420,8 @@ void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
 
   // We should have reached this after passing a cilk_spawn_or_continue(0)
   assert(!stack->in_user_code);
+  /* stack->strand_end */
+  /*     = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(1)); */
   /* measure_and_add_strand_length(stack); */
   /* stack->in_user_code = false; */
 
@@ -319,7 +444,18 @@ void cilk_enter_end(__cilkrts_stack_frame *sf, void *rsp)
   assert(!(stack->in_user_code));
 
   stack->in_user_code = true;
-  start_strand(&(stack->strand_ruler));
+
+  // Different prologues either jump to or call this function
+  if (HELPER == stack->bot->func_type) {
+    // Helper prologue calls enter_end
+    stack->strand_start
+        = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(1));
+  } else {
+    // Parent prologue jumps to enter_end
+    stack->strand_start
+        = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
+  }
+  begin_strand(stack);
 }
 
 void cilk_tool_c_function_enter(void *rip)
@@ -330,18 +466,26 @@ void cilk_tool_c_function_enter(void *rip)
 
   if(!TOOL_INITIALIZED) { // We are entering main.
     cilk_tool_init(); // this will push the frame for MAIN and do a gettime
+    stack->strand_start
+        = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
+
   } else {
     assert(stack->in_user_code);
 
+    stack->strand_end
+        = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
     measure_and_add_strand_length(stack);
 
     // Push new frame for this C function onto the stack
     cilkprof_stack_push(stack, C_FUNCTION);
     stack->bot->rip = (uintptr_t)__builtin_extract_return_addr(rip);
+
+    stack->strand_start
+        = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
     /* the stop time is also the start time of this function */
     // stack->start = stack->stop; /* TB: Want to exclude the length
     // (e.g. time or instruction count) of this function */
-    start_strand(&(stack->strand_ruler));
+    begin_strand(stack);
   }
 }
 
@@ -366,6 +510,8 @@ void cilk_tool_c_function_leave(void *rip)
   assert(stack->in_user_code);
   // stop the timer and attribute the elapsed time to this returning
   // function
+  stack->strand_end
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
   measure_and_add_strand_length(stack);
 
   assert(NULL != stack->bot->parent);
@@ -376,6 +522,8 @@ void cilk_tool_c_function_leave(void *rip)
   assert(0 == stack->bot->lchild_spn);
   assert(cc_hashtable_is_empty(stack->bot->prefix_table));
   assert(cc_hashtable_is_empty(stack->bot->lchild_table));
+  assert(strand_hashtable_is_empty(stack->bot->strand_prefix_table));
+  assert(strand_hashtable_is_empty(stack->bot->strand_lchild_table));
 
   // Pop the stack
   old_bottom = cilkprof_stack_pop(stack);
@@ -391,10 +539,17 @@ void cilk_tool_c_function_leave(void *rip)
 				    old_bottom->running_wrk,
 				    old_bottom->contin_spn);
   assert(add_success);
+  /* add_success = add_to_strand_hashtable(&(stack->strand_wrk_table), */
+  /*                                       stack->strand_start, */
+  /*                                       stack->strand_end, */
+  /*                                       old_bottom->running_wrk, */
+  /*                                       old_bottom->contin_spn); */
+  /* assert(add_success); */
 
   // Update continuation span table
   /* fprintf(stderr, "adding tables\n"); */
   add_cc_hashtables(&(stack->bot->contin_table), &(old_bottom->contin_table));
+  add_strand_hashtables(&(stack->bot->strand_contin_table), &(old_bottom->strand_contin_table));
 
   /* fprintf(stderr, "adding to contin table\n"); */
   add_success = add_to_cc_hashtable(&(stack->bot->contin_table),
@@ -403,14 +558,25 @@ void cilk_tool_c_function_leave(void *rip)
 				    old_bottom->running_wrk,
 				    old_bottom->contin_spn);
   assert(add_success);
+  /* add_success = add_to_strand_hashtable(&(stack->bot->strand_contin_table), */
+  /*                                       stack->strand_start, */
+  /*                                       stack->strand_end, */
+  /*                                       old_bottom->running_wrk, */
+  /*                                       old_bottom->contin_spn); */
+  /* assert(add_success); */
 
   // clean up
   free(old_bottom->prefix_table);
   free(old_bottom->contin_table);
   free(old_bottom->lchild_table);
+  free(old_bottom->strand_prefix_table);
+  free(old_bottom->strand_contin_table);
+  free(old_bottom->strand_lchild_table);
   free(old_bottom);
 
-  start_strand(&(stack->strand_ruler));
+  stack->strand_start
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
+  begin_strand(stack);
 }
 
 void cilk_spawn_prepare(__cilkrts_stack_frame *sf)
@@ -423,6 +589,8 @@ void cilk_spawn_prepare(__cilkrts_stack_frame *sf)
 
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
+  stack->strand_end
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
   measure_and_add_strand_length(stack);
 
   assert(stack->in_user_code);
@@ -443,7 +611,9 @@ void cilk_spawn_or_continue(int in_continuation)
         fprintf(stderr, "cilk_spawn_or_continue(%d) from continuation\n", in_continuation); );
     stack->in_user_code = true;
 
-    start_strand(&(stack->strand_ruler));
+    stack->strand_start
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
+    begin_strand(stack);
 
   } else {
     // In the spawned child
@@ -459,6 +629,9 @@ void cilk_detach_begin(__cilkrts_stack_frame *parent)
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
   assert(HELPER == stack->bot->func_type);
 
+  // Prologue calls detach_begin
+  stack->strand_end
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(1));
   measure_and_add_strand_length(stack);
 
   assert(stack->in_user_code);
@@ -476,7 +649,10 @@ void cilk_detach_end(void)
   assert(!(stack->in_user_code));
   stack->in_user_code = true;
 
-  start_strand(&(stack->strand_ruler));
+  // Prologue jumps to detach_end, rather than call it
+  stack->strand_start
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
+  begin_strand(stack);
 
   return;
 }
@@ -485,12 +661,14 @@ void cilk_sync_begin(__cilkrts_stack_frame *sf)
 {
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
+  stack->strand_end
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
   measure_and_add_strand_length(stack);
 
   if (SPAWNER == stack->bot->func_type) {
     WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_begin(%p) from SPAWNER\n", sf); );
   } else {
-    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_end(%p) from HELPER\n", sf); );
+    WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_begin(%p) from HELPER\n", sf); );
   }
 
   assert(stack->in_user_code);
@@ -504,22 +682,28 @@ void cilk_sync_end(__cilkrts_stack_frame *sf)
   if (stack->bot->lchild_spn > stack->bot->contin_spn) {
     stack->bot->prefix_spn += stack->bot->lchild_spn;
     add_cc_hashtables(&(stack->bot->prefix_table), &(stack->bot->lchild_table));
+    add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_lchild_table));
   } else {
     stack->bot->prefix_spn += stack->bot->contin_spn;
     add_cc_hashtables(&(stack->bot->prefix_table), &(stack->bot->contin_table));
+    add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_contin_table));
   }
 
   stack->bot->lchild_spn = 0;
   stack->bot->contin_spn = 0;
   clear_cc_hashtable(stack->bot->lchild_table);
   clear_cc_hashtable(stack->bot->contin_table);
+  clear_strand_hashtable(stack->bot->strand_lchild_table);
+  clear_strand_hashtable(stack->bot->strand_contin_table);
   
   // can't be anything else; only SPAWNER have sync
   assert(SPAWNER == stack->bot->func_type); 
   assert(!(stack->in_user_code));
   stack->in_user_code = true;
   WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_end(%p) from SPAWNER\n", sf); );
-  start_strand(&(stack->strand_ruler));
+  stack->strand_start
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
+  begin_strand(stack);
 }
 
 void cilk_leave_begin(__cilkrts_stack_frame *sf)
@@ -531,6 +715,9 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
   cilkprof_stack_frame_t *old_bottom;
   bool add_success;
 
+  // Epilogues call leave_begin
+  stack->strand_end
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(1));
   measure_and_add_strand_length(stack);
 
   assert(stack->in_user_code);
@@ -547,9 +734,11 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
     // this function is Cilk function that spawned before.
     assert(0 == stack->bot->lchild_spn);
     assert(cc_hashtable_is_empty(stack->bot->lchild_table));
+    assert(strand_hashtable_is_empty(stack->bot->strand_lchild_table));
     stack->bot->prefix_spn += stack->bot->contin_spn;
 
     add_cc_hashtables(&(stack->bot->prefix_table), &(stack->bot->contin_table));
+    add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_contin_table));
 
     // Pop the stack
     old_bottom = cilkprof_stack_pop(stack);
@@ -566,15 +755,25 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 				      old_bottom->running_wrk,
 				      old_bottom->prefix_spn);
     assert(add_success);
+    /* add_success = add_to_strand_hashtable(&(stack->strand_wrk_table), */
+    /*                                       stack->strand_start, */
+    /*                                       stack->strand_end, */
+    /*                                       old_bottom->running_wrk, */
+    /*                                       old_bottom->prefix_spn); */
+    /* assert(add_success); */
 
     /* fprintf(stderr, "adding tables\n"); */
 
     // Update continuation span table
     add_cc_hashtables(&(stack->bot->contin_table), &(old_bottom->prefix_table));
+    add_strand_hashtables(&(stack->bot->strand_contin_table), &(old_bottom->strand_prefix_table));
 
     free(old_bottom->prefix_table);
     free(old_bottom->lchild_table);
     free(old_bottom->contin_table);
+    free(old_bottom->strand_prefix_table);
+    free(old_bottom->strand_lchild_table);
+    free(old_bottom->strand_contin_table);
 
     /* fprintf(stderr, "adding to contin table\n"); */
 
@@ -584,6 +783,12 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 				      old_bottom->running_wrk,
 				      old_bottom->prefix_spn);
     assert(add_success);
+    /* add_success = add_to_strand_hashtable(&(stack->bot->strand_contin_table), */
+    /*                                       stack->strand_start, */
+    /*                                       stack->strand_end, */
+    /*                                       old_bottom->running_wrk, */
+    /*                                       old_bottom->prefix_spn); */
+    /* assert(add_success); */
 
   } else {
     // This is the case we are returning to a spawn, since a HELPER 
@@ -595,6 +800,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
     assert(0 == stack->bot->lchild_spn);
     stack->bot->prefix_spn += stack->bot->contin_spn;
     add_cc_hashtables(&(stack->bot->prefix_table), &(stack->bot->contin_table));
+    add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_contin_table));
 
     // Pop the stack
     old_bottom = cilkprof_stack_pop(stack);
@@ -608,6 +814,12 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 				      old_bottom->running_wrk,
 				      old_bottom->prefix_spn);
     assert(add_success);
+    /* add_success = add_to_strand_hashtable(&(stack->strand_wrk_table), */
+    /*                                       stack->strand_start, */
+    /*                                       stack->strand_end, */
+    /*                                       old_bottom->running_wrk, */
+    /*                                       old_bottom->prefix_spn); */
+    /* assert(add_success); */
 
     if (stack->bot->contin_spn + old_bottom->prefix_spn > stack->bot->lchild_spn) {
       // fprintf(stderr, "updating longest child\n");
@@ -616,12 +828,17 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
       // This needs a better data structure to be implemented more
       // efficiently.
       add_cc_hashtables(&(stack->bot->prefix_table), &(stack->bot->contin_table));
+      add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_contin_table));
 
       stack->bot->lchild_spn = old_bottom->prefix_spn;
       free(stack->bot->lchild_table);
+      free(stack->bot->strand_lchild_table);
       stack->bot->lchild_table = old_bottom->prefix_table;
+      stack->bot->strand_lchild_table = old_bottom->strand_prefix_table;
       free(old_bottom->lchild_table);
       free(old_bottom->contin_table);
+      free(old_bottom->strand_lchild_table);
+      free(old_bottom->strand_contin_table);
 
       // Update lchild span table
       add_success = add_to_cc_hashtable(&(stack->bot->lchild_table),
@@ -630,14 +847,24 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 					old_bottom->running_wrk,
 					old_bottom->prefix_spn);
       assert(add_success);
+      /* add_success = add_to_strand_hashtable(&(stack->bot->strand_lchild_table), */
+      /*                                       stack->strand_start, */
+      /*                                       stack->strand_end, */
+      /*                                       old_bottom->running_wrk, */
+      /*                                       old_bottom->prefix_spn); */
+      /* assert(add_success); */
 
       stack->bot->contin_spn = 0;
       clear_cc_hashtable(stack->bot->contin_table);
+      clear_strand_hashtable(stack->bot->strand_contin_table);
 
     } else {
       free(old_bottom->prefix_table);
       free(old_bottom->lchild_table);
       free(old_bottom->contin_table);
+      free(old_bottom->strand_prefix_table);
+      free(old_bottom->strand_lchild_table);
+      free(old_bottom->strand_contin_table);
     }
   }
 
@@ -669,6 +896,9 @@ void cilk_leave_end(void)
 
   assert(!(stack->in_user_code));
   stack->in_user_code = true;
-  start_strand(&(stack->strand_ruler));
+  // Epilogues jump to leave_end, rather than call it
+  stack->strand_start
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
+  begin_strand(stack);
 }
 
