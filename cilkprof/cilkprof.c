@@ -396,9 +396,9 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* rip)
   } else {
     stack = &(GET_STACK(ctx_stack));
 
-    // Prologue calls enter_begin
+    // Prologue disabled
     stack->strand_end
-        = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(1));
+        = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
     measure_and_add_strand_length(stack);
 
     stack->in_user_code = false;
@@ -420,8 +420,9 @@ void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
 
   // We should have reached this after passing a cilk_spawn_or_continue(0)
   assert(!stack->in_user_code);
+  // Prologue disabled
   /* stack->strand_end */
-  /*     = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(1)); */
+  /*     = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0)); */
   /* measure_and_add_strand_length(stack); */
   /* stack->in_user_code = false; */
 
@@ -447,9 +448,9 @@ void cilk_enter_end(__cilkrts_stack_frame *sf, void *rsp)
 
   // Different prologues either jump to or call this function
   if (HELPER == stack->bot->func_type) {
-    // Helper prologue calls enter_end
+    // Helper prologue disabled
     stack->strand_start
-        = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(1));
+        = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
   } else {
     // Parent prologue jumps to enter_end
     stack->strand_start
@@ -629,9 +630,9 @@ void cilk_detach_begin(__cilkrts_stack_frame *parent)
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
   assert(HELPER == stack->bot->func_type);
 
-  // Prologue calls detach_begin
+  // Prologue disabled
   stack->strand_end
-      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(1));
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
   measure_and_add_strand_length(stack);
 
   assert(stack->in_user_code);
@@ -715,9 +716,9 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
   cilkprof_stack_frame_t *old_bottom;
   bool add_success;
 
-  // Epilogues call leave_begin
+  // Epilogues disabled
   stack->strand_end
-      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(1));
+      = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
   measure_and_add_strand_length(stack);
 
   assert(stack->in_user_code);
