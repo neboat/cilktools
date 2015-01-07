@@ -5,16 +5,16 @@ endif
 
 .PHONY : default clean clean$(TEST)
 
-$(TEST).d : CFLAGS += $(APP_CFLAGS)
-$(TEST).d : CXXFLAGS += $(APP_CFLAGS)
+# $(TEST).d : CFLAGS += $(APP_CFLAGS)
+# $(TEST).d : CXXFLAGS += $(APP_CFLAGS)
 
-$(TEST) : CFLAGS += $(APP_CFLAGS)
-$(TEST) : CXXFLAGS += $(APP_CFLAGS)
-$(TEST) : LDFLAGS += $(APP_LDFLAGS)
-$(TEST) : LDLIBS += $(APP_LDLIBS)
+CFLAGS += $(APP_CFLAGS)
+CXXFLAGS += $(APP_CFLAGS)
+LDFLAGS += $(APP_LDFLAGS)
+LDLIBS += $(APP_LDLIBS)
 
-# Need to use C++ to perform static linking with Cilk runtime
-$(TEST) : CC=$(CXX)
+% : %.o
+	$(CXX) $(LDFLAGS) $^ $(LDLIBS) -o $@
 
 clean : clean$(TEST)
 
