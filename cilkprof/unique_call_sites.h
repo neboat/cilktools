@@ -77,21 +77,4 @@ bool exit_call_site(unique_call_site_t **call_sites,
   return is_recursive;
 }
 
-/* bool call_site_is_recursive(const unique_call_site_t *call_sites, uintptr_t call_site) */
-/* { */
-/*   /\* fprintf(stderr, "call_site_is_recursive(%lx)\n", call_site); *\/ */
-/*   // Search for this call site */
-/*   const unique_call_site_t *entry = call_sites; */
-/*   while (entry) { */
-/*     /\* fprintf(stderr, "entry %lx\n", entry->call_site); *\/ */
-/*     if (call_site == entry->call_site) { */
-/*       break; */
-/*     } */
-/*     entry = entry->prev; */
-/*   } */
-
-/*   assert(entry); */
-/*   return entry->is_recursive; */
-/* } */
-
 #endif
