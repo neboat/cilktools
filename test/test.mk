@@ -19,4 +19,6 @@ LDLIBS += $(APP_LDLIBS)
 clean : clean$(TEST)
 
 clean$(TEST) :
-	rm -f $(TEST) *.o *.d* *~
+	rm -f $(ALL_TESTS) *.o *.d* *~
+
+-include $(patsubst %,%.d, $(ALL_TESTS))

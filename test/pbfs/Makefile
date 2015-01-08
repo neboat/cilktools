@@ -6,12 +6,11 @@ BFS_SRC = bfs.cpp graph.cpp bag.cpp
 BFS_OBJ = $(BFS_SRC:.cpp=.o)
 
 TEST = bfs
+ALL_TESTS = bfs
 
-default : $(TEST)
+default : $(ALL_TESTS)
 
 include $(INCLUDE_DIR)/mk.common
 include ../test.mk
-
--include $(TEST).d
 
 # CFLAGS += -O3
