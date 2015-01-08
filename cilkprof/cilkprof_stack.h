@@ -11,6 +11,7 @@
 #include "strand_time.h"
 #include "cc_hashtable.h"
 #include "strand_hashtable.h"
+#include "unique_call_sites.h"
 
 // Types of functions in cilkprof stack
 typedef enum {
@@ -32,6 +33,13 @@ typedef struct cilkprof_stack_frame_t {
 
   // Pointer to the frame's parent
   struct cilkprof_stack_frame_t *parent;
+
+  // Local work of this function
+  uint64_t local_wrk;
+  // Local span of this function
+  uint64_t local_spn;
+  // Local continuation span of this function
+  uint64_t local_contin;
 
   // Running work of this function
   uint64_t running_wrk;
@@ -78,6 +86,9 @@ typedef struct {
   // Pointer to bottom of the stack, onto which frames are pushed.
   cilkprof_stack_frame_t *bot;
 
+  // Pointer to unique call sites
+  unique_call_site_t *unique_call_sites;
+
   // Call-site data associated with the running work
   cc_hashtable_t* wrk_table;
   // Strand data associated with running work
@@ -90,9 +101,14 @@ typedef struct {
 void cilkprof_stack_frame_init(cilkprof_stack_frame_t *frame, FunctionType_t func_type)
 {
   frame->parent = NULL;
+
   frame->func_type = func_type;
   frame->rip = 0;  // (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
   frame->depth = 0;
+
+  frame->local_wrk = 0;
+  frame->local_spn = 0;
+  frame->local_contin = 0;
 
   frame->running_wrk = 0;
 
@@ -115,8 +131,12 @@ void cilkprof_stack_init(cilkprof_stack_t *stack, FunctionType_t func_type)
     (cilkprof_stack_frame_t *)malloc(sizeof(cilkprof_stack_frame_t));
   cilkprof_stack_frame_init(new_frame, func_type);
   stack->bot = new_frame;
+
   stack->wrk_table = cc_hashtable_create();
   stack->strand_wrk_table = strand_hashtable_create();
+
+  stack->unique_call_sites = NULL;
+
   init_strand_ruler(&(stack->strand_ruler));
   stack->in_user_code = false;
 }

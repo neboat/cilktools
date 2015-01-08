@@ -234,7 +234,6 @@ static void flush_strand_hashtable_list(strand_hashtable_t **tab) {
       ++(*tab)->table_size;
     } else {  // same start and end
       tab_entry->wrk += entry->wrk;
-      tab_entry->spn += entry->spn;
       tab_entry->count += 1;
     }
 
@@ -260,7 +259,7 @@ void flush_strand_hashtable(strand_hashtable_t **tab) {
 // data was successfully added, false otherwise.
 bool add_to_strand_hashtable(strand_hashtable_t **tab,
                              uintptr_t start, uintptr_t end,
-                             uint64_t wrk, uint64_t spn) {
+                             uint64_t wrk) {
   /* fprintf(stderr, "add_to_strand_hashtable\n"); */
 
   if ((*tab)->list_size + (*tab)->table_size
@@ -274,7 +273,6 @@ bool add_to_strand_hashtable(strand_hashtable_t **tab,
     lst_entry->entry.start = start;
     lst_entry->entry.end = end;
     lst_entry->entry.wrk = wrk;
-    lst_entry->entry.spn = spn;
     lst_entry->entry.count = 1;
     lst_entry->next = NULL;
 
@@ -310,12 +308,10 @@ bool add_to_strand_hashtable(strand_hashtable_t **tab,
       entry->start = start;
       entry->end = end;
       entry->wrk = wrk;
-      entry->spn = spn;
       entry->count = 1;
       ++(*tab)->table_size;
     } else {  // same start and end
       entry->wrk += wrk;
-      entry->spn += spn;
       entry->count += 1;
     }
   }
@@ -382,7 +378,6 @@ strand_hashtable_t* add_strand_hashtables(strand_hashtable_t **left, strand_hash
 	++(*left)->table_size;
       } else {  // same start and end
 	l_entry->wrk += r_entry->wrk;
-	l_entry->spn += r_entry->spn;
 	l_entry->count += 1;
       }
     }

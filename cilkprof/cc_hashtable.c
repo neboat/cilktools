@@ -39,16 +39,13 @@ static size_t hash(uintptr_t rip, int lg_capacity) {
   /* uint64_t key = (rip >> TAG_OFFSET) * (height + 1); */
   /* return (size_t)(key & mask); */
 
-  // uint64_t key = (uint32_t)(rip >> TAG_OFFSET) + height;
+  /* uint64_t key = (uint32_t)(rip >> TAG_OFFSET) + height; */
   uint64_t key = (uint32_t)(rip >> TAG_OFFSET);
   uint32_t h = (uint32_t)((ASEED * key + BSEED) % PRIME);
   for (int i = 0; i < MIX_ROUNDS; ++i) {
     h = h * (2 * h + 1);
     h = (h << (sizeof(h) / 2)) | (h >> (sizeof(h) / 2));
   }
-
-  /* fprintf(stderr, "hash = %lu, (1 << lg_capacity) = %d\n", */
-  /* 	  h & mask, 1 << lg_capacity); */
   return (size_t)(h & mask);
 }
 
@@ -93,10 +90,37 @@ cc_hashtable_t* cc_hashtable_create(void) {
   return cc_hashtable_alloc(START_LG_CAPACITY);
 }
 
-static inline int can_override_entry(cc_hashtable_entry_t *entry, uintptr_t new_rip) {
+static inline
+int can_override_entry(cc_hashtable_entry_t *entry, uintptr_t new_rip) {
   // used to be this:
   // entry->rip == new_rip && entry->height == new_height
   return (entry->rip == new_rip);
+}
+
+static inline
+void combine_entries(cc_hashtable_entry_t *entry,
+                     const cc_hashtable_entry_t *entry_add) {
+  if (entry->depth == entry_add->depth) {
+    // Add entries if they have the same depth
+    entry->wrk += entry_add->wrk;
+    entry->spn += entry_add->spn;
+    entry->local_wrk += entry_add->local_wrk;
+    entry->local_spn += entry_add->local_spn;
+    entry->count += 1;
+  } else if (entry->depth > entry_add->depth) {
+    // replace only if the entry to add has smaller depth
+    uint64_t old_local_wrk = entry->local_wrk;
+    uint64_t old_local_spn = entry->local_spn;
+    uint64_t old_count = entry->count;
+    *entry = *entry_add;
+    entry->local_wrk += old_local_wrk;
+    entry->local_spn += old_local_spn;
+    entry->count = old_count + 1;
+  } else {
+    entry->local_wrk += entry_add->local_wrk;
+    entry->local_spn += entry_add->local_spn;
+    entry->count += 1;
+  }
 }
 
 // Helper function to get the entry in tab corresponding to rip.
@@ -207,8 +231,8 @@ get_cc_hashtable_entry(uintptr_t rip, cc_hashtable_t **tab) {
   return entry;
 }
 
-
-static void flush_cc_hashtable_list(cc_hashtable_t **tab) {
+static inline
+void flush_cc_hashtable_list(cc_hashtable_t **tab) {
   // Flush list into table
   cc_hashtable_list_el_t *lst_entry = (*tab)->head;
   int entries_added = 0;
@@ -225,23 +249,14 @@ static void flush_cc_hashtable_list(cc_hashtable_t **tab) {
 
     tab_entry = get_cc_hashtable_entry(entry->rip, tab);
     assert(NULL != tab_entry);
-    assert(empty_cc_entry_p(tab_entry) || tab_entry->rip == entry->rip);
+    assert(empty_cc_entry_p(tab_entry) || can_override_entry(tab_entry, entry->rip));
 
     if (empty_cc_entry_p(tab_entry)) {
       // the compiler will do a struct copy
       *tab_entry = *entry;
       ++(*tab)->table_size;
-    } else if (tab_entry->depth == entry->depth) { // same rip and same depth
-      tab_entry->wrk += entry->wrk;
-      tab_entry->spn += entry->spn;
-      tab_entry->count += 1;
-    } else if(tab_entry->depth > entry->depth) {
-      uint64_t old_count = tab_entry->count;
-      // replace only if the new entry has smaller depth
-      *tab_entry = *entry;
-      tab_entry->count = old_count + 1;
     } else {
-      tab_entry->count += 1;
+      combine_entries(tab_entry, entry);
     }
 
     entries_added++;
@@ -266,7 +281,8 @@ void flush_cc_hashtable(cc_hashtable_t **tab) {
 // data was successfully added, false otherwise.
 bool add_to_cc_hashtable(cc_hashtable_t **tab,
 			 int32_t depth, uintptr_t rip,
-			 uint64_t wrk, uint64_t spn) {
+			 uint64_t wrk, uint64_t spn,
+                         uint64_t local_wrk, uint64_t local_spn) {
 
   if ((*tab)->list_size + (*tab)->table_size
       < (1 << ((*tab)->lg_capacity - LG_FRAC_SIZE_THRESHOLD)) - 1) {
@@ -280,6 +296,8 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
     lst_entry->entry.rip = rip;
     lst_entry->entry.wrk = wrk;
     lst_entry->entry.spn = spn;
+    lst_entry->entry.local_wrk = local_wrk;
+    lst_entry->entry.local_spn = local_spn;
     lst_entry->entry.count = 1;
     lst_entry->next = NULL;
 
@@ -304,7 +322,7 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
 
     // Otherwise, add it to the table directly
     cc_hashtable_entry_t *entry = get_cc_hashtable_entry(rip, tab);
-    assert(empty_cc_entry_p(entry) || entry->rip == rip);
+    assert(empty_cc_entry_p(entry) || can_override_entry(entry, rip));
 
     if (NULL == entry) {
       return false;
@@ -315,20 +333,23 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
       entry->rip = rip;
       entry->wrk = wrk;
       entry->spn = spn;
+      entry->local_wrk = local_wrk;
+      entry->local_spn = local_spn;
       entry->count = 1;
       ++(*tab)->table_size;
-    } else if (entry->depth == depth) { // same rip and same depth
-      entry->wrk += wrk;
-      entry->spn += spn;
-      entry->count += 1;
-    } else if (entry->depth > depth) { // replace only if new entry has smaller depth
-      assert(entry->rip == rip);
-      entry->depth = depth;
-      entry->wrk = wrk;
-      entry->spn = spn;
-      entry->count += 1;
     } else {
+      entry->local_wrk += local_wrk;
+      entry->local_spn += local_spn;
       entry->count += 1;
+      if (entry->depth == depth) {  // same rip and same depth
+        entry->wrk += wrk;
+        entry->spn += spn;
+      } else if (entry->depth > depth) {  // replace only if new entry has smaller depth
+        assert(can_override_entry(entry, rip));
+        entry->depth = depth;
+        entry->wrk = wrk;
+        entry->spn = spn;
+      }
     }
   }
 
@@ -385,23 +406,14 @@ cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left, cc_hashtable_t **right)
 
       l_entry = get_cc_hashtable_entry(r_entry->rip, left);
       assert (NULL != l_entry);
-      assert(empty_cc_entry_p(l_entry) || l_entry->rip == r_entry->rip);
+      assert(empty_cc_entry_p(l_entry) || can_override_entry(l_entry, r_entry->rip));
 
       if (empty_cc_entry_p(l_entry)) {
         // let the compiler do the struct copy
         *l_entry = *r_entry;
 	++(*left)->table_size;
-      } else if (l_entry->depth == r_entry->depth) { // same rip same depth
-	l_entry->wrk += r_entry->wrk;
-	l_entry->spn += r_entry->spn;
-	l_entry->count += 1;
-      } else if (l_entry->depth > r_entry->depth) {
-        uint64_t old_count = l_entry->count;
-        // replace only if the right entry has smaller depth
-        *l_entry = *r_entry;
-        l_entry->count = old_count + 1;
       } else {
-        l_entry->count += 1;
+        combine_entries(l_entry, r_entry);
       }
     }
   }

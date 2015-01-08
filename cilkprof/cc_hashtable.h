@@ -22,6 +22,12 @@ typedef struct {
   // Span associated with rip
   uint64_t spn;
 
+  // Local work associated with rip
+  uint64_t local_wrk;
+
+  // Local span associated with rip
+  uint64_t local_spn;
+
   // Update counts associated with this rip.  This count is
   // independent of depth.
   uint32_t count;
@@ -70,7 +76,8 @@ cc_hashtable_entry_t*
 get_cc_hashtable_entry_const(uintptr_t rip, cc_hashtable_t *tab);
 bool add_to_cc_hashtable(cc_hashtable_t **tab,
 			 int32_t depth, uintptr_t rip,
-			 uint64_t wrk, uint64_t spn);
+			 uint64_t wrk, uint64_t spn,
+                         uint64_t local_wrk, uint64_t local_spn);
 cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left,
 				  cc_hashtable_t **right);
 void free_cc_hashtable(cc_hashtable_t *tab);

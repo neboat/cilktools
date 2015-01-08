@@ -17,8 +17,6 @@ typedef struct {
 
   // Work associated with strand
   uint64_t wrk;
-  // Span associated with strand
-  uint64_t spn;
 
   // Update counts associated with this strand
   uint32_t count;
@@ -68,7 +66,7 @@ get_strand_hashtable_entry_const(uintptr_t start, uintptr_t end,
                                  strand_hashtable_t *tab);
 bool add_to_strand_hashtable(strand_hashtable_t **tab,
                              uintptr_t start, uintptr_t end,
-                             uint64_t wrk, uint64_t spn);
+                             uint64_t wrk);
 strand_hashtable_t* add_strand_hashtables(strand_hashtable_t **left,
                                           strand_hashtable_t **right);
 void free_strand_hashtable(strand_hashtable_t *tab);
