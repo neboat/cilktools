@@ -4,7 +4,7 @@ INCLUDE_DIR ?= $(TOOL_HOME)/include
 
 TEST = mm_dac
 
-default : $(TEST)
+default : $(TEST) mm_dac_coarsen mm_dac_coarsen_transpose
 
 mm_dac_coarsen : mm_dac_coarsen.o
 mm_dac_coarsen_transpose : mm_dac_coarsen_transpose.o
