@@ -4,3 +4,4 @@
 *.o
 cilksan/libcilksan.a
 lib
+*.csv
