@@ -5,3 +5,4 @@
 cilksan/libcilksan.a
 lib
 *.csv
+*.objd
