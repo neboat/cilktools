@@ -118,7 +118,7 @@ char* get_info_on_inst_addr(uint64_t addr, int *line_no, char **file) {
     map_lst_el = map_lst_el->next;
   }
 
-  fprintf(stderr, "%lu is not in range\n", addr);
+  fprintf(stderr, "address %lx is not in range\n", addr);
   return NULL;
 }
 
@@ -148,7 +148,7 @@ void print_addr(uintptr_t a) {
     }
     map_lst_el = map_lst_el->next;
   }
-  printf("%lx is not in range\n", a);
+  printf("address %lx is not in range\n", a);
 }
 
 #endif
