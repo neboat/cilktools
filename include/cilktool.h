@@ -17,11 +17,11 @@ void cilk_tool_init(void);
 void cilk_tool_destroy(void);
 void cilk_tool_print(void);
 
-void cilk_tool_c_function_enter(void* rip);
+void cilk_tool_c_function_enter(void* this_fn, void* rip);
 void cilk_tool_c_function_leave(void* rip);
 
-void cilk_enter_begin (__cilkrts_stack_frame* sf, void* rip);
-void cilk_enter_helper_begin(__cilkrts_stack_frame* sf, void* rip);
+void cilk_enter_begin (__cilkrts_stack_frame* sf, void* this_fn, void* rip);
+void cilk_enter_helper_begin(__cilkrts_stack_frame* sf, void* this_fn, void* rip);
 void cilk_enter_end (__cilkrts_stack_frame* sf, void* rsp);
 void cilk_spawn_prepare (__cilkrts_stack_frame* sf);
 void cilk_spawn_or_continue (int in_continuation);
