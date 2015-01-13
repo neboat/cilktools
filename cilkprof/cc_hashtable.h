@@ -4,33 +4,48 @@
 #include <stdbool.h>
 #include <inttypes.h>
 
+#include "util.h"
+
 /**
  * Data structures
  */
 
 // Structure for a hashtable entry
 typedef struct {
-  // Function depth 
-  int32_t depth;
+  // Function depth.  This is currently used to distinguish recursive
+  // and non-recursive functions.
+  /* int32_t depth; */
+
+  // Flag denoting whether this call site ever calls itself
+  bool is_recursive;
+
+  // Function type 
+  FunctionType_t func_type;
+
+  // Number of invocations of rip, excluding recursive instances.
+  uint32_t count;
+  // Number of top-level invocations of rip.
+  uint32_t top_count;
+  // Total number of invocations of rip.
+  uint32_t local_count;
 
   // Return address that identifies call site
   uintptr_t rip;
 
-  // Work associated with rip
+  // Work associated with rip, excluding recursive instances
   uint64_t wrk;
-
-  // Span associated with rip
+  // Span associated with rip, excluding recursive instances
   uint64_t spn;
+
+  // Work associated with top-level invocations of rip
+  uint64_t top_wrk;
+  // Span associated with top-level invocations of rip
+  uint64_t top_spn;
 
   // Local work associated with rip
   uint64_t local_wrk;
-
   // Local span associated with rip
   uint64_t local_spn;
-
-  // Update counts associated with this rip.  This count is
-  // independent of depth.
-  uint32_t count;
 
 } cc_hashtable_entry_t;
 
@@ -75,7 +90,8 @@ void flush_cc_hashtable(cc_hashtable_t **tab);
 cc_hashtable_entry_t*
 get_cc_hashtable_entry_const(uintptr_t rip, cc_hashtable_t *tab);
 bool add_to_cc_hashtable(cc_hashtable_t **tab,
-			 int32_t depth, uintptr_t rip,
+			 InstanceType_t inst_type,
+                         FunctionType_t func_type, uintptr_t rip,
 			 uint64_t wrk, uint64_t spn,
                          uint64_t local_wrk, uint64_t local_spn);
 cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left,

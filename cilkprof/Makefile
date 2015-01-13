@@ -10,6 +10,8 @@ default:
 include $(INCLUDE_DIR)/mk.common
 include $(BASENAME).mk
 
+CFLAGS += -O2
+
 TARGETS = $(LIBCILKPROF)
 
 default : $(TARGETS)

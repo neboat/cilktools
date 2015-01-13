@@ -13,14 +13,6 @@
 #include "strand_hashtable.h"
 #include "unique_call_sites.h"
 
-// Types of functions in cilkprof stack
-typedef enum {
-  MAIN,
-  SPAWNER,
-  HELPER,
-  C_FUNCTION,
-} FunctionType_t;
-
 // Type for cilkprof stack frame
 typedef struct cilkprof_stack_frame_t {
   // Function type
@@ -30,6 +22,8 @@ typedef struct cilkprof_stack_frame_t {
   int32_t depth;
   // Return address of this function
   uintptr_t rip;
+  // Address of this function
+  uintptr_t function;
 
   // Pointer to the frame's parent
   struct cilkprof_stack_frame_t *parent;

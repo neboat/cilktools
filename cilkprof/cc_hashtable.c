@@ -100,27 +100,63 @@ int can_override_entry(cc_hashtable_entry_t *entry, uintptr_t new_rip) {
 static inline
 void combine_entries(cc_hashtable_entry_t *entry,
                      const cc_hashtable_entry_t *entry_add) {
-  if (entry->depth == entry_add->depth) {
-    // Add entries if they have the same depth
-    entry->wrk += entry_add->wrk;
-    entry->spn += entry_add->spn;
-    entry->local_wrk += entry_add->local_wrk;
-    entry->local_spn += entry_add->local_spn;
-    entry->count += 1;
-  } else if (entry->depth > entry_add->depth) {
-    // replace only if the entry to add has smaller depth
-    uint64_t old_local_wrk = entry->local_wrk;
-    uint64_t old_local_spn = entry->local_spn;
-    uint64_t old_count = entry->count;
-    *entry = *entry_add;
-    entry->local_wrk += old_local_wrk;
-    entry->local_spn += old_local_spn;
-    entry->count = old_count + 1;
-  } else {
-    entry->local_wrk += entry_add->local_wrk;
-    entry->local_spn += entry_add->local_spn;
-    entry->count += 1;
-  }
+  entry->is_recursive |= entry_add->is_recursive;
+  entry->local_wrk += entry_add->local_wrk;
+  entry->local_spn += entry_add->local_spn;
+  entry->local_count += entry_add->local_count;
+  entry->wrk += entry_add->wrk;
+  entry->spn += entry_add->spn;
+  entry->count += entry_add->count;
+  entry->top_wrk += entry_add->top_wrk;
+  entry->top_spn += entry_add->top_spn;
+  entry->top_count += entry_add->top_count;
+
+  /* if ((INT32_MAX == entry->depth && INT32_MAX == entry_add->depth) || */
+  /*     (INT32_MAX > entry->depth && INT32_MAX > entry_add->depth)) { */
+  /*   // entry and entry_add are both leaf call sites or both recursive */
+  /*   // call sites.  add them together */
+  /*   entry->wrk += entry_add->wrk; */
+  /*   entry->spn += entry_add->spn; */
+  /*   entry->local_wrk += entry_add->local_wrk; */
+  /*   entry->local_spn += entry_add->local_spn; */
+  /*   entry->count += 1; */
+  /* } else if (INT32_MAX == entry->depth && INT32_MAX > entry_add->depth) { */
+  /*   // entry_add is recursive and should replace non-recursive entry */
+  /*   uint64_t old_local_wrk = entry->local_wrk; */
+  /*   uint64_t old_local_spn = entry->local_spn; */
+  /*   uint64_t old_count = entry->count; */
+  /*   *entry = *entry_add; */
+  /*   entry->local_wrk += old_local_wrk; */
+  /*   entry->local_spn += old_local_spn; */
+  /*   entry->count = old_count + 1; */
+  /* } else { */
+  /*   // entry is recursive and entry_add is leaf; ignore entry_add */
+  /*   entry->local_wrk += entry_add->local_wrk; */
+  /*   entry->local_spn += entry_add->local_spn; */
+  /*   entry->count += 1; */
+  /* } */
+
+  /* if (entry->depth == entry_add->depth) { */
+  /*   // Add entries if they have the same depth */
+  /*   entry->wrk += entry_add->wrk; */
+  /*   entry->spn += entry_add->spn; */
+  /*   entry->local_wrk += entry_add->local_wrk; */
+  /*   entry->local_spn += entry_add->local_spn; */
+  /*   entry->count += 1; */
+  /* } else if (entry->depth > entry_add->depth) { */
+  /*   // replace only if the entry to add has smaller depth */
+  /*   uint64_t old_local_wrk = entry->local_wrk; */
+  /*   uint64_t old_local_spn = entry->local_spn; */
+  /*   uint64_t old_count = entry->count; */
+  /*   *entry = *entry_add; */
+  /*   entry->local_wrk += old_local_wrk; */
+  /*   entry->local_spn += old_local_spn; */
+  /*   entry->count = old_count + 1; */
+  /* } else { */
+  /*   entry->local_wrk += entry_add->local_wrk; */
+  /*   entry->local_spn += entry_add->local_spn; */
+  /*   entry->count += 1; */
+  /* } */
 }
 
 // Helper function to get the entry in tab corresponding to rip.
@@ -280,7 +316,9 @@ void flush_cc_hashtable(cc_hashtable_t **tab) {
 // Add the given cc_hashtable_entry_t data to **tab.  Returns true if
 // data was successfully added, false otherwise.
 bool add_to_cc_hashtable(cc_hashtable_t **tab,
-			 int32_t depth, uintptr_t rip,
+			 /* int32_t depth, bool is_top_level, */
+                         InstanceType_t inst_type,
+                         FunctionType_t func_type, uintptr_t rip, 
 			 uint64_t wrk, uint64_t spn,
                          uint64_t local_wrk, uint64_t local_spn) {
 
@@ -292,13 +330,25 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
     cc_hashtable_list_el_t *lst_entry =
       (cc_hashtable_list_el_t*)malloc(sizeof(cc_hashtable_list_el_t));
 
-    lst_entry->entry.depth = depth;
+    lst_entry->entry.is_recursive = (0 != (RECURSIVE & inst_type));
+    lst_entry->entry.func_type = func_type;
     lst_entry->entry.rip = rip;
     lst_entry->entry.wrk = wrk;
     lst_entry->entry.spn = spn;
+    lst_entry->entry.count = (0 != (RECORD & inst_type));
+    if (TOP & inst_type) {
+      lst_entry->entry.top_wrk = wrk;
+      lst_entry->entry.top_spn = spn;
+      assert(0 != wrk);
+      lst_entry->entry.top_count = 1;
+    } else {
+      lst_entry->entry.top_wrk = 0;
+      lst_entry->entry.top_spn = 0;
+      lst_entry->entry.top_count = 0;
+    }      
     lst_entry->entry.local_wrk = local_wrk;
     lst_entry->entry.local_spn = local_spn;
-    lst_entry->entry.count = 1;
+    lst_entry->entry.local_count = 1;
     lst_entry->next = NULL;
 
     if (NULL == (*tab)->tail) {
@@ -329,27 +379,64 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
     }
   
     if (empty_cc_entry_p(entry)) {
-      entry->depth = depth;
+      entry->is_recursive = (0 != (RECURSIVE & inst_type));
+      entry->func_type = func_type;
       entry->rip = rip;
       entry->wrk = wrk;
       entry->spn = spn;
+      entry->count = (0 != (RECORD & inst_type));
+      if (TOP & inst_type) {
+        entry->top_wrk = wrk;
+        entry->top_spn = spn;
+        entry->top_count = 1;
+      } else {
+        entry->top_wrk = 0;
+        entry->top_spn = 0;
+        entry->top_count = 0;
+      }
       entry->local_wrk = local_wrk;
       entry->local_spn = local_spn;
-      entry->count = 1;
+      entry->local_count = 1;
       ++(*tab)->table_size;
     } else {
+      entry->is_recursive |= (0 != (RECURSIVE & inst_type));
       entry->local_wrk += local_wrk;
       entry->local_spn += local_spn;
-      entry->count += 1;
-      if (entry->depth == depth) {  // same rip and same depth
-        entry->wrk += wrk;
-        entry->spn += spn;
-      } else if (entry->depth > depth) {  // replace only if new entry has smaller depth
-        assert(can_override_entry(entry, rip));
-        entry->depth = depth;
-        entry->wrk = wrk;
-        entry->spn = spn;
+      entry->local_count += 1;
+      entry->wrk += wrk;
+      entry->spn += spn;
+      entry->count += (0 != (RECORD & inst_type));
+      if (TOP & inst_type) {
+        entry->top_wrk += wrk;
+        entry->top_spn += spn;
+        entry->top_count += 1;
       }
+      /* if ((INT32_MAX == entry->depth && INT32_MAX == depth) /\* Both leaves *\/ || */
+      /*     (INT32_MAX > entry->depth && INT32_MAX > depth) /\* Both recursive *\/) { */
+      /*   // Existing entry and new data are either both leaves or both */
+      /*   // recursive.  Add them. */
+      /*   entry->wrk += wrk; */
+      /*   entry->spn += spn; */
+      /*   entry->count += 1; */
+      /* } else if (INT32_MAX == entry->depth && INT32_MAX > depth) { */
+      /*   // New entry is recursive and should override old leaf entry */
+      /*   assert(can_override_entry(entry, rip)); */
+      /*   entry->depth = depth; */
+      /*   entry->wrk = wrk; */
+      /*   entry->spn = spn; */
+      /* } else { */
+      /*   // New entry is leaf, but existing entry is recursive.  Ignore */
+      /*   // new entry. */
+      /* } */
+      /* if (entry->depth == depth) {  // same rip and same depth */
+      /*   entry->wrk += wrk; */
+      /*   entry->spn += spn; */
+      /* } else if (entry->depth > depth) {  // replace only if new entry has smaller depth */
+      /*   assert(can_override_entry(entry, rip)); */
+      /*   entry->depth = depth; */
+      /*   entry->wrk = wrk; */
+      /*   entry->spn = spn; */
+      /* } */
     }
   }
 
