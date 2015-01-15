@@ -66,9 +66,9 @@ void cilk_tool_destroy(void) {
 }
 
 void cilk_tool_print(void) {
-  viewread_stack_t *stack;
-
-  stack = &ctx_stack;
+  /* viewread_stack_t *stack; */
+  /* stack = &ctx_stack; */
+  return;
 }
 
 void cilk_enter_begin(__cilkrts_stack_frame *sf, void* rip)
@@ -281,25 +281,25 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
   // Pop the stack
   old_bottom = viewread_stack_pop(stack);
 
+  // SP bag should be empty when old_bottom returns
+  assert(NULL == old_bottom->sp_bag);
+
+  /* fprintf(stderr, "returning P bag %p, dest P bag %p\n", */
+  /*         old_bottom->p_bag, stack->bot->p_bag); */
+  if (NULL == stack->bot->p_bag && NULL != old_bottom->p_bag) {
+    stack->bot->p_bag = DisjointSet_find_set(old_bottom->p_bag);
+    stack->bot->p_bag->type = P;
+  } else if (NULL != old_bottom->p_bag) {
+    DisjointSet_combine(stack->bot->p_bag, old_bottom->p_bag);
+    stack->bot->p_bag->type = P;
+  }
+  assert(NULL == stack->bot->p_bag || P == stack->bot->p_bag->type);
+
   switch(old_bottom->func_type) {
     case CILK:  // Returning from called function
 #if TRACE_CALLS
       fprintf(stderr, "cilk_leave_begin(%p) from CILK\n", sf);
 #endif
-
-      // SP bag should be empty when old_bottom returns
-      assert(NULL == old_bottom->sp_bag);
-
-      /* fprintf(stderr, "returning P bag %p, dest P bag %p\n", */
-      /*         old_bottom->p_bag, stack->bot->p_bag); */
-      if (NULL == stack->bot->p_bag && NULL != old_bottom->p_bag) {
-        stack->bot->p_bag = DisjointSet_find_set(old_bottom->p_bag);
-        stack->bot->p_bag->type = P;
-      } else if (NULL != old_bottom->p_bag) {
-        DisjointSet_combine(stack->bot->p_bag, old_bottom->p_bag);
-        stack->bot->p_bag->type = P;
-      }
-      assert(NULL == stack->bot->p_bag || P == stack->bot->p_bag->type);
 
       /* fprintf(stderr, "combining SS bags %p and %p\n", */
       /*         stack->bot->ss_bag, old_bottom->ss_bag); */
@@ -322,20 +322,18 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 #if TRACE_CALLS
       fprintf(stderr, "cilk_leave_begin(%p) from HELPER\n", sf);
 #endif
-      // SP bag should be empty when old_bottom returns
-      assert(NULL == old_bottom->sp_bag);
 
-      /* fprintf(stderr, "returning SS bag %p, dest SP bag %p\n", */
-      /*         old_bottom->ss_bag, stack->bot->sp_bag); */
+      /* fprintf(stderr, "returning SS bag %p, dest P bag %p\n", */
+      /*         old_bottom->ss_bag, stack->bot->p_bag); */
 
       assert(0 != stack->bot->local_spawns);
 
-      if (NULL == stack->bot->sp_bag) {
+      if (NULL == stack->bot->p_bag) {
         stack->bot->sp_bag = DisjointSet_find_set(old_bottom->ss_bag);
-        stack->bot->sp_bag->type = SP;
+        stack->bot->sp_bag->type = P;
       } else {
-        DisjointSet_combine(stack->bot->sp_bag, old_bottom->ss_bag);
-        stack->bot->sp_bag->type = SP;
+        DisjointSet_combine(stack->bot->p_bag, old_bottom->ss_bag);
+        stack->bot->sp_bag->type = P;
       }
       break;
     case MAIN:
