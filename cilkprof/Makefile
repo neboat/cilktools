@@ -10,9 +10,12 @@ default:
 include $(INCLUDE_DIR)/mk.common
 include $(BASENAME).mk
 
-CFLAGS += -O2
-
 TARGETS = $(LIBCILKPROF)
+
+ifeq (1,$(OPT))
+CFLAGS += -O3 -DNDEBUG
+CXXFLAGS += -O3 -DNDEBUG
+endif
 
 default : $(TARGETS)
 

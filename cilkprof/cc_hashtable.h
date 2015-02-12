@@ -78,7 +78,8 @@ typedef struct {
   cc_hashtable_entry_t entries[0];
 
 } cc_hashtable_t;
-  
+
+extern cc_hashtable_list_el_t *ll_free_list;  
 
 /**
  * Exposed hashtable methods

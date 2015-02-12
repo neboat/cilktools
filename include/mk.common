@@ -1,6 +1,7 @@
 # -*- mode: makefile-gmake; -*-
 
-COMPILER ?= LLVM
+#COMPILER ?= LLVM
+COMPILER ?= GCC
 
 COMPILERS_HOME = $(HOME)/compilers
 
@@ -22,14 +23,16 @@ APP_LDFLAGS =
 APP_LDLIBS = -l:libcilkrts.a -lpthread -ldl
 
 ifeq ($(COMPILER),LLVM)
-COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilk-ok
+#COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilk-ok
+COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilk
 CC = $(COMPILER_ROOT)/bin/clang
 CXX = $(COMPILER_ROOT)/bin/clang++
 else ifeq ($(COMPILER),GCC)
-COMPILER_ROOT = $(COMPILERS_HOME)/gcc-supertech
+#COMPILER_ROOT = $(COMPILERS_HOME)/gcc-supertech
+COMPILER_ROOT = $(COMPILERS_HOME)/gcc
 CC = $(COMPILER_ROOT)/bin/gcc
 CXX = $(COMPILER_ROOT)/bin/g++
-APP_CFLAGS += -fcilktool
+#APP_CFLAGS += -fcilktool
 endif
 
 ## Each C source file will have a corresponding file of prerequisites.
