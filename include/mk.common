@@ -1,7 +1,7 @@
 # -*- mode: makefile-gmake; -*-
 
-#COMPILER ?= LLVM
-COMPILER ?= GCC
+COMPILER ?= LLVM
+#COMPILER ?= GCC
 
 COMPILERS_HOME = $(HOME)/compilers
 
