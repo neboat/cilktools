@@ -25,13 +25,13 @@ APP_LDLIBS = -l:libcilkrts.a -lpthread -ldl
 ifeq ($(COMPILER),LLVM)
 #COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilk-ok
 COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilk
-CC = $(COMPILER_ROOT)/bin/clang
-CXX = $(COMPILER_ROOT)/bin/clang++
+CC = clang
+CXX = clang++
 else ifeq ($(COMPILER),GCC)
 #COMPILER_ROOT = $(COMPILERS_HOME)/gcc-supertech
 COMPILER_ROOT = $(COMPILERS_HOME)/gcc
-CC = $(COMPILER_ROOT)/bin/gcc
-CXX = $(COMPILER_ROOT)/bin/g++
+CC = gcc
+CXX = g++
 #APP_CFLAGS += -fcilktool
 endif
 
