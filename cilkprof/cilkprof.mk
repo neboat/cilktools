@@ -1,6 +1,6 @@
 LIBCILKPROF = $(LIB_DIR)/libcilkprof.a
 
-CILKPROF_SRC = cilkprof.c cc_hashtable.c util.c functions.c call_sites.c # SFMT-src-1.4.1/SFMT.c # strand_hashtable.c 
+CILKPROF_SRC = cilkprof.c cc_hashtable.c util.c iaddrs.c # functions.c call_sites.c # SFMT-src-1.4.1/SFMT.c # strand_hashtable.c 
 CILKPROF_OBJ = $(CILKPROF_SRC:.c=.o)
 
 -include $(CILKPROF_OBJ:.o=.d)

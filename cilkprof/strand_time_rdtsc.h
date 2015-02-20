@@ -1,0 +1,52 @@
+#ifndef INCLUDED_STRAND_TIME_DOT_H
+#define INCLUDED_STRAND_TIME_DOT_H
+
+#include <stdio.h>
+#include <time.h>
+
+typedef struct strand_ruler_t {
+  uint64_t start;
+  uint64_t stop;
+} strand_ruler_t;
+
+
+static __attribute__((always_inline))
+unsigned long long rdtsc(void)
+{
+  unsigned hi, lo;
+  __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+  return (   ((unsigned long long)lo)
+	  | (((unsigned long long)hi)<<32));
+}
+
+// Store the current "time" into TIMER.
+static inline void gettime(uint64_t *timer) {
+  *timer = rdtsc();
+}
+
+// Get the number of nanoseconds elapsed between STOP and START.
+static inline uint64_t elapsed_cycles(const uint64_t *start,
+                                      const uint64_t *stop) {
+  return *stop - *start;
+}
+
+static inline void init_strand_ruler(strand_ruler_t *strand_ruler) {
+  return;
+}
+
+static inline void start_strand(strand_ruler_t *strand_ruler) {
+  gettime(&(strand_ruler->start));
+}
+
+static inline void stop_strand(strand_ruler_t *strand_ruler) {
+  gettime(&(strand_ruler->stop));
+}
+
+static inline uint64_t measure_strand_length(strand_ruler_t *strand_ruler) {
+  // End of strand
+  stop_strand(strand_ruler);
+
+  return elapsed_cycles(&(strand_ruler->start), &(strand_ruler->stop));
+}
+
+#endif

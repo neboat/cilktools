@@ -5,7 +5,7 @@
 #include <inttypes.h>
 #include <assert.h>
 
-#include "call_sites.h"
+#include "iaddrs.h"
 
 #ifndef DEBUG_RESIZE
 #define DEBUG_RESIZE 0
@@ -18,12 +18,12 @@
 /**
  * Method implementations
  */
-// Starting capacity of the hash table is 2^4 entries.
-static const int START_LG_CAPACITY = 1;
+// Starting capacity of the hash table is 2^2 entries.
+static const int START_LG_CAPACITY = 2;
 
 /* // Threshold fraction of table size that can be in the linked list. */
 /* static const int LG_FRAC_SIZE_THRESHOLD = 0; */
-static const int TABLE_CONSTANT = 1;
+static const int TABLE_CONSTANT = 2;
 
 /* // Torlate entries being displaced by a constant amount */
 /* /\* static const size_t MAX_DISPLACEMENT = 1024 / sizeof(cc_hashtable_entry_t); *\/ */
@@ -31,35 +31,13 @@ static const int TABLE_CONSTANT = 1;
 
 int MIN_CAPACITY = 1;
 
-extern call_site_table_t *call_site_table;
+extern iaddr_table_t *call_site_table;
 cc_hashtable_list_el_t *ll_free_list = NULL;
 
-// Use a standardish trick from hardware caching to hash rip-height
-// pairs.
-/* static const uint64_t TAG_OFFSET = 0; */
-/* static const uint64_t PRIME = (uint32_t)(-5); */
-/* static const uint64_t ASEED = 0x8c678e6b; */
-/* static const uint64_t BSEED = 0x9c16f733; */
-/* static const int MIX_ROUNDS = 4; */
-
-/* static inline size_t hash(uintptr_t rip, int lg_capacity) { */
-/*   uint64_t mask = (1 << lg_capacity) - 1; */
-/*   /\* uint64_t key = (rip >> TAG_OFFSET) * (height + 1); *\/ */
-/*   /\* return (size_t)(key & mask); *\/ */
-
-/*   /\* uint64_t key = (uint32_t)(rip >> TAG_OFFSET) + height; *\/ */
-/*   uint64_t key = (uint32_t)(rip >> TAG_OFFSET); */
-/*   uint64_t h = (uint64_t)((ASEED * key + BSEED) % PRIME); */
-/*   for (int i = 0; i < MIX_ROUNDS; ++i) { */
-/*     h = h * (2 * h + 1); */
-/*     h = (h << (sizeof(h) / 2)) | (h >> (sizeof(h) / 2)); */
-/*   } */
-/*   return (size_t)(h & mask); */
-/* } */
-
 static inline uint32_t index(uintptr_t call_site) {
-  call_site_record_t *cs_record
-      = get_call_site_record_const(call_site, call_site_table);
+  iaddr_record_t *cs_record
+      = get_iaddr_record_const(call_site, call_site_table);
+  assert(call_site == cs_record->iaddr);
   return cs_record->index;
 }
 
@@ -189,29 +167,6 @@ get_cc_hashtable_entry_const(uintptr_t rip, cc_hashtable_t *tab) {
     return &(tab->entries[cs_index]);
   }
   return NULL;
-
-  /* cc_hashtable_entry_t *entry = &(tab->entries[hash(rip, tab->lg_capacity)]); */
-
-  /* assert(entry >= tab->entries && entry < tab->entries + (1 << tab->lg_capacity)); */
-
-  /* int disp; */
-  /* for (disp = 0; disp < min(MAX_DISPLACEMENT, (1 << tab->lg_capacity)); ++disp) { */
-  /*   if (empty_cc_entry_p(entry) || can_override_entry(entry, rip)) { */
-  /*     break; */
-  /*   } */
-  /*   ++entry; */
-  /*   // Wrap around to the beginning */
-  /*   if (&(tab->entries[1 << tab->lg_capacity]) == entry) { */
-  /*     entry = &(tab->entries[0]); */
-  /*   } */
-  /* } */
-
-  /* // Return false if the entry was not found in the target area. */
-  /* if (min(MAX_DISPLACEMENT, (1 << tab->lg_capacity))  <= disp) { */
-  /*   return NULL; */
-  /* } */
-
-  /* return entry; */
 }
 
 
@@ -246,33 +201,6 @@ static cc_hashtable_t* increase_table_capacity(const cc_hashtable_t *tab) {
     make_empty_cc_entry(&(new_tab->entries[i]));
   }
 
-  /* do { */
-  /*   new_tab = cc_hashtable_alloc(new_lg_capacity); */
-  /*   elements_added = 0; */
-
-  /*   for (size_t i = 0; i < (1 << tab->lg_capacity); ++i) { */
-  /*     const cc_hashtable_entry_t *old = &(tab->entries[i]); */
-  /*     if (empty_cc_entry_p(old)) { */
-  /*       continue; */
-  /*     } */
-
-  /*     cc_hashtable_entry_t *new */
-  /*       = get_cc_hashtable_entry_const(old->rip, new_tab); */
-
-  /*     if (NULL == new) { */
-  /*       ++new_lg_capacity; */
-  /*       free(new_tab); */
-  /*       break; */
-  /*     } else { */
-  /*       assert(empty_cc_entry_p(new)); */
-      
-  /*       *new = *old; */
-  /*       ++elements_added; */
-  /*     } */
-  /*   } */
-
-  /* } while (elements_added < tab->table_size); */
-
   new_tab->table_size = tab->table_size;
 
   new_tab->list_size = tab->list_size;
@@ -285,15 +213,10 @@ static cc_hashtable_t* increase_table_capacity(const cc_hashtable_t *tab) {
 
 // Add entry to tab, resizing tab if necessary.  Returns a pointer to
 // the entry if it can find a place to store it, NULL otherwise.
-static cc_hashtable_entry_t*
+static inline cc_hashtable_entry_t*
 get_cc_hashtable_entry(uintptr_t rip, cc_hashtable_t **tab) {
-#if DEBUG_RESIZE
-  int old_table_cap = 1 << (*tab)->lg_capacity;
-#endif
-
-  cc_hashtable_entry_t *entry;
-  while (NULL == (entry = get_cc_hashtable_entry_const(rip, *tab))) {
-
+  cc_hashtable_entry_t *entry = get_cc_hashtable_entry_const(rip, *tab);
+  if (NULL == entry) {
     cc_hashtable_t *new_tab = increase_table_capacity(*tab);
 
     assert(new_tab);
@@ -304,18 +227,56 @@ get_cc_hashtable_entry(uintptr_t rip, cc_hashtable_t **tab) {
 
     free(*tab);
     *tab = new_tab;
+
+    entry = get_cc_hashtable_entry_const(rip, *tab);
   }
-#if DEBUG_RESIZE
-  if (1 << (*tab)->lg_capacity > 2 * old_table_cap) {
-    fprintf(stderr, "get_cc_hashtable_entry: new table capacity %d\n",
-    	    1 << (*tab)->lg_capacity);
-  }
-#endif
+
+  assert(NULL != entry);
   return entry;
+
+/* #if DEBUG_RESIZE */
+/*   int old_table_cap = 1 << (*tab)->lg_capacity; */
+/* #endif */
+
+/*   /\* // Clear the hashtable if necessary *\/ */
+/*   /\* if (0 == (*tab)->table_size) { *\/ */
+/*   /\*   for (size_t i = 0; i < (1 << (*tab)->lg_capacity); ++i) { *\/ */
+/*   /\*     make_empty_cc_entry(&((*tab)->entries[i])); *\/ */
+/*   /\*   } *\/ */
+/*   /\* } *\/ */
+
+/*   cc_hashtable_entry_t *entry; */
+/*   while (NULL == (entry = get_cc_hashtable_entry_const(rip, *tab))) { */
+
+/*     cc_hashtable_t *new_tab = increase_table_capacity(*tab); */
+
+/*     assert(new_tab); */
+/*     assert(new_tab->head == (*tab)->head); */
+/*     assert(new_tab->tail == (*tab)->tail); */
+/*     (*tab)->head = NULL; */
+/*     (*tab)->tail = NULL; */
+
+/*     free(*tab); */
+/*     *tab = new_tab; */
+/*   } */
+/* #if DEBUG_RESIZE */
+/*   if (1 << (*tab)->lg_capacity > 2 * old_table_cap) { */
+/*     fprintf(stderr, "get_cc_hashtable_entry: new table capacity %d\n", */
+/*     	    1 << (*tab)->lg_capacity); */
+/*   } */
+/* #endif */
+/*   return entry; */
 }
 
 static inline
 void flush_cc_hashtable_list(cc_hashtable_t **tab) {
+  /* // Clear the hashtable if necessary */
+  /* if (0 == (*tab)->table_size) { */
+  /*   for (size_t i = 0; i < (1 << (*tab)->lg_capacity); ++i) { */
+  /*     make_empty_cc_entry(&((*tab)->entries[i])); */
+  /*   } */
+  /* } */
+
   // Flush list into table
   cc_hashtable_list_el_t *lst_entry = (*tab)->head;
   int entries_added = 0;
@@ -378,7 +339,7 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
   /* if ((*tab)->list_size + (*tab)->table_size */
   /*     < (1 << ((*tab)->lg_capacity - LG_FRAC_SIZE_THRESHOLD)) - 1) { */
   if ((1 << (*tab)->lg_capacity) < MIN_CAPACITY &&
-      (*tab)->list_size < MIN_CAPACITY / TABLE_CONSTANT) {
+      (*tab)->list_size < MIN_CAPACITY * TABLE_CONSTANT) {
     // If the table_size + list_size is sufficiently small, add entry
     // to linked list.
     cc_hashtable_list_el_t *lst_entry;
@@ -431,11 +392,8 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
 
     // Otherwise, add it to the table directly
     cc_hashtable_entry_t *entry = get_cc_hashtable_entry(rip, tab);
+    assert(NULL != entry);
     assert(empty_cc_entry_p(entry) || can_override_entry(entry, rip));
-
-    if (NULL == entry) {
-      return false;
-    }
   
     if (empty_cc_entry_p(entry)) {
       entry->is_recursive = (0 != (RECURSIVE & inst_type));
@@ -533,6 +491,7 @@ cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left, cc_hashtable_t **right)
   }
   (*right)->head = NULL;
   (*right)->tail = NULL;
+  (*right)->list_size = 0;
 
   /* fprintf(stderr, "list_size = %d, table_size = %d, lg_capacity = %d\n", */
   /* 	  (*left)->list_size, (*left)->table_size, (*left)->lg_capacity); */
@@ -544,26 +503,68 @@ cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left, cc_hashtable_t **right)
   /*   flush_cc_hashtable_list(left); */
   /* } */
 
-  if ((*left)->list_size >= MIN_CAPACITY / TABLE_CONSTANT) {
+  if ((*left)->list_size >= MIN_CAPACITY * TABLE_CONSTANT) {
     flush_cc_hashtable_list(left);
   }
-  cc_hashtable_entry_t *l_entry, *r_entry;
 
-  for (size_t i = 0; i < (1 << (*right)->lg_capacity); ++i) {
-    r_entry = &((*right)->entries[i]);
-    if (empty_cc_entry_p(r_entry)) {
-      continue;
-    }
+  if ((*right)->table_size > 0) {
+    cc_hashtable_entry_t *l_entry, *r_entry;
+    for (size_t i = 0; i < (1 << (*right)->lg_capacity); i += 4) {
+      r_entry = &((*right)->entries[i]);
+      if (!empty_cc_entry_p(r_entry)) {
+        l_entry = &((*left)->entries[i]);
+        assert(NULL != l_entry);
+        assert(empty_cc_entry_p(l_entry) || can_override_entry(l_entry, r_entry->rip));
+        if (empty_cc_entry_p(l_entry)) {
+          // let the compiler do the struct copy
+          *l_entry = *r_entry;
+          ++(*left)->table_size;
+        } else {
+          combine_entries(l_entry, r_entry);
+        }
+      }
 
-    l_entry = &((*left)->entries[i]);
-    assert(NULL != l_entry);
-    assert(empty_cc_entry_p(l_entry) || can_override_entry(l_entry, r_entry->rip));
-    if (empty_cc_entry_p(l_entry)) {
-      // let the compiler do the struct copy
-      *l_entry = *r_entry;
-      ++(*left)->table_size;
-    } else {
-      combine_entries(l_entry, r_entry);
+      r_entry = &((*right)->entries[i+1]);
+      if (!empty_cc_entry_p(r_entry)) {
+        l_entry = &((*left)->entries[i+1]);
+        assert(NULL != l_entry);
+        assert(empty_cc_entry_p(l_entry) || can_override_entry(l_entry, r_entry->rip));
+        if (empty_cc_entry_p(l_entry)) {
+          // let the compiler do the struct copy
+          *l_entry = *r_entry;
+          ++(*left)->table_size;
+        } else {
+          combine_entries(l_entry, r_entry);
+        }
+      }
+
+      r_entry = &((*right)->entries[i+2]);
+      if (!empty_cc_entry_p(r_entry)) {
+        l_entry = &((*left)->entries[i+2]);
+        assert(NULL != l_entry);
+        assert(empty_cc_entry_p(l_entry) || can_override_entry(l_entry, r_entry->rip));
+        if (empty_cc_entry_p(l_entry)) {
+          // let the compiler do the struct copy
+          *l_entry = *r_entry;
+          ++(*left)->table_size;
+        } else {
+          combine_entries(l_entry, r_entry);
+        }
+      }
+
+      r_entry = &((*right)->entries[i+3]);
+      if (!empty_cc_entry_p(r_entry)) {
+        l_entry = &((*left)->entries[i+3]);
+        assert(NULL != l_entry);
+        assert(empty_cc_entry_p(l_entry) || can_override_entry(l_entry, r_entry->rip));
+        if (empty_cc_entry_p(l_entry)) {
+          // let the compiler do the struct copy
+          *l_entry = *r_entry;
+          ++(*left)->table_size;
+        } else {
+          combine_entries(l_entry, r_entry);
+        }
+      }
     }
   }
 
@@ -608,10 +609,12 @@ void clear_cc_hashtable(cc_hashtable_t *tab) {
   tab->list_size = 0;
 
   // Clear the table
-  for (size_t i = 0; i < (1 << tab->lg_capacity); ++i) {
-    make_empty_cc_entry(&(tab->entries[i]));
+  if (tab->table_size > 0) {
+    for (size_t i = 0; i < (1 << tab->lg_capacity); ++i) {
+      make_empty_cc_entry(&(tab->entries[i]));
+    }
+    tab->table_size = 0;
   }
-  tab->table_size = 0;
 }
 
 // Free a table.

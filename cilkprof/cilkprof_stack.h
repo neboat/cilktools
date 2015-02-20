@@ -12,7 +12,8 @@
 // time, this counts the number of strands encountered, which should
 // be deterministic.
 /* #include "strand_count.h" */
-#include "strand_time.h"
+/* #include "strand_time.h" */
+#include "strand_time_rdtsc.h"
 #include "cc_hashtable.h"
 #if COMPUTE_STRAND_DATA
 #include "strand_hashtable.h"
@@ -132,32 +133,46 @@ void cilkprof_stack_frame_init(cilkprof_stack_frame_t *frame, FunctionType_t fun
   frame->running_wrk = 0;
 
   frame->prefix_spn = 0;
-  frame->prefix_table = cc_hashtable_create();
+  assert(cc_hashtable_is_empty(frame->prefix_table));
+  /* clear_cc_hashtable(frame->prefix_table); */
+  /* frame->prefix_table = cc_hashtable_create(); */
 #if COMPUTE_STRAND_DATA
-  frame->strand_prefix_table = strand_hashtable_create();
+  assert(strand_hashtable_is_empty(frame->strand_prefix_table));
+  /* clear_strand_hashtable(frame->strand_prefix_table); */
+  /* frame->strand_prefix_table = strand_hashtable_create(); */
 #endif
   frame->lchild_spn = 0;
-  frame->lchild_table = cc_hashtable_create();
+  assert(cc_hashtable_is_empty(frame->lchild_table));
+  /* clear_cc_hashtable(frame->lchild_table); */
+  /* frame->lchild_table = cc_hashtable_create(); */
 #if COMPUTE_STRAND_DATA
-  frame->strand_lchild_table = strand_hashtable_create();
+  assert(strand_hashtable_is_empty(frame->strand_lchild_table));
+  /* clear_strand_hashtable(frame->strand_lchild_table); */
+  /* frame->strand_lchild_table = strand_hashtable_create(); */
 #endif
   frame->contin_spn = 0;
-  frame->contin_table = cc_hashtable_create();
+  assert(cc_hashtable_is_empty(frame->contin_table));
+  /* clear_cc_hashtable(frame->contin_table); */
+  /* frame->contin_table = cc_hashtable_create(); */
 #if COMPUTE_STRAND_DATA
-  frame->strand_contin_table = strand_hashtable_create();
+  assert(strand_hashtable_is_empty(frame->strand_contin_table));
+  /* clear_strand_hashtable(frame->strand_contin_table); */
+  /* frame->strand_contin_table = strand_hashtable_create(); */
 #endif
 }
 
+cilkprof_stack_frame_t* cilkprof_stack_push(cilkprof_stack_t *stack, FunctionType_t func_type);
 
 // Initializes the cilkprof stack
 void cilkprof_stack_init(cilkprof_stack_t *stack, FunctionType_t func_type)
 {
   stack->sf_free_list = NULL;
-
-  cilkprof_stack_frame_t *new_frame =
-    (cilkprof_stack_frame_t *)malloc(sizeof(cilkprof_stack_frame_t));
-  cilkprof_stack_frame_init(new_frame, func_type);
-  stack->bot = new_frame;
+  stack->bot = NULL;
+  cilkprof_stack_push(stack, func_type);
+  /* cilkprof_stack_frame_t *new_frame = */
+  /*   (cilkprof_stack_frame_t *)malloc(sizeof(cilkprof_stack_frame_t)); */
+  /* cilkprof_stack_frame_init(new_frame, func_type); */
+  /* stack->bot = new_frame; */
 
   stack->wrk_table = cc_hashtable_create();
 #if COMPUTE_STRAND_DATA
@@ -179,6 +194,18 @@ cilkprof_stack_frame_t* cilkprof_stack_push(cilkprof_stack_t *stack, FunctionTyp
     stack->sf_free_list = stack->sf_free_list->parent;
   } else {
     new_frame = (cilkprof_stack_frame_t *)malloc(sizeof(cilkprof_stack_frame_t));
+    new_frame->prefix_table = cc_hashtable_create();
+#if COMPUTE_STRAND_DATA
+    new_frame->strand_prefix_table = strand_hashtable_create();
+#endif
+    new_frame->lchild_table = cc_hashtable_create();
+#if COMPUTE_STRAND_DATA
+    new_frame->strand_lchild_table = strand_hashtable_create();
+#endif
+    new_frame->contin_table = cc_hashtable_create();
+#if COMPUTE_STRAND_DATA
+    new_frame->strand_contin_table = strand_hashtable_create();
+#endif
   }
   cilkprof_stack_frame_init(new_frame, func_type);
   new_frame->parent = stack->bot;

@@ -8,17 +8,24 @@
 #include <stdlib.h>
 #include <assert.h>
 
-typedef struct {
+typedef struct call_site_record_t {
   bool on_stack;
   bool recursive;
   uint32_t index;
   uintptr_t call_site;
+  struct call_site_record_t *next;
 } call_site_record_t;
 
+typedef struct call_site_cache_el_t {
+  call_site_record_t *record;
+  struct call_site_cache_el_t *next;
+} call_site_cache_el_t;
+
 typedef struct {
+  call_site_cache_el_t* call_site_cache;
   int lg_capacity;
   int table_size;
-  call_site_record_t records[0];
+  call_site_record_t* records[0];
 } call_site_table_t;
 
 /**
