@@ -196,13 +196,13 @@ void cilk_tool_destroy(void) {
     cilkprof_stack_frame_t *next_free_frame;
     while (NULL != free_frame) {
       next_free_frame = free_frame->parent;
-      free(free_frame->prefix_table);
-      free(free_frame->lchild_table);
-      free(free_frame->contin_table);
+      free_cc_hashtable(free_frame->prefix_table);
+      free_cc_hashtable(free_frame->lchild_table);
+      free_cc_hashtable(free_frame->contin_table);
 #if COMPUTE_STRAND_DATA
-      free(free_frame->strand_prefix_table);
-      free(free_frame->strand_lchild_table);
-      free(free_frame->strand_contin_table);
+      free_strand_hashtable(free_frame->strand_prefix_table);
+      free_strand_hashtable(free_frame->strand_lchild_table);
+      free_strand_hashtable(free_frame->strand_contin_table);
 #endif
       free(free_frame);
       free_frame = next_free_frame;

@@ -74,6 +74,9 @@ typedef struct {
   cc_hashtable_list_el_t *head;
   cc_hashtable_list_el_t *tail;
 
+  // Array storing indices of entries[] that are nonzero
+  int *populated;
+
   // Entries of the hash table
   cc_hashtable_entry_t entries[0];
 
