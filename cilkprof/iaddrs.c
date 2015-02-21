@@ -265,7 +265,7 @@ int32_t add_to_iaddr_table(iaddr_table_t **tab, uintptr_t iaddr) {
   
   if (empty_record_p(record)) {
     // Grow table if capacity exceeds 50%
-    if ((*tab)->table_size + 1 > (1 << ((*tab)->lg_capacity - 1))) {
+    if (((*tab)->table_size + 1) > (1 << ((*tab)->lg_capacity - 1))) {
       iaddr_table_t *new_tab = increase_table_capacity(*tab);
       assert(new_tab);
       free(*tab);
