@@ -150,11 +150,11 @@ get_iaddr_record_const(uintptr_t iaddr, iaddr_table_t *tab) {
   }
 
   if (NULL == record) {
-    // Allocate a new record
-    record = (iaddr_record_t*)malloc(sizeof(iaddr_record_t));
-    make_empty_iaddr_record(record);
-    record->next = *first_record;
-    *first_record = record;    
+    /* // Allocate a new record */
+    /* record = (iaddr_record_t*)malloc(sizeof(iaddr_record_t)); */
+    /* make_empty_iaddr_record(record); */
+    /* record->next = *first_record; */
+    /* *first_record = record;     */
   } else if (NULL != last_record) {
     // Move record to front
     last_record->next = record->next;
@@ -227,7 +227,19 @@ static iaddr_table_t* increase_table_capacity(const iaddr_table_t *tab) {
 // the entry if it can find a place to store it, NULL otherwise.
 static iaddr_record_t*
 get_iaddr_record(uintptr_t iaddr, iaddr_table_t **tab) {
-  return get_iaddr_record_const(iaddr, *tab);
+  iaddr_record_t *record = get_iaddr_record_const(iaddr, *tab);
+  iaddr_record_t **first_record = &((*tab)->records[hash(iaddr, (*tab)->lg_capacity)]);
+
+  if (NULL == record) {
+    // Allocate a new record
+    record = (iaddr_record_t*)malloc(sizeof(iaddr_record_t));
+    make_empty_iaddr_record(record);
+    record->next = *first_record;
+    *first_record = record;
+  }
+
+  return record;
+
 /* #if DEBUG_RESIZE */
 /*   int old_table_cap = 1 << (*tab)->lg_capacity; */
 /* #endif */
