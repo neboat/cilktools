@@ -753,14 +753,6 @@ void cilk_tool_c_function_leave(void *rip)
 
   stack->bot->c_fn_frame->running_wrk += old_bottom->running_wrk;
   stack->bot->c_fn_frame->running_spn += old_bottom->running_spn;
-  // Don't add old_bottom's local_wrk or local_spn
-
-  // Update continuation span table
-  /* fprintf(stderr, "adding tables\n"); */
-/*   add_cc_hashtables(&(stack->bot->contin_table), &(old_bottom->contin_table)); */
-/* #if COMPUTE_STRAND_DATA */
-/*   add_strand_hashtables(&(stack->bot->strand_contin_table), &(old_bottom->strand_contin_table)); */
-/* #endif */
 
   // TB: This assert can fail if the compiler does really aggressive
   // inlining.  See bfs compiled with -O3.
