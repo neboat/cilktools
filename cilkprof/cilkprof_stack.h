@@ -32,7 +32,7 @@ typedef struct c_fn_frame_t {
 
   // Work and span values to store for every function
   uint64_t local_wrk;
-  uint64_t local_contin;
+  /* uint64_t local_contin; */
   uint64_t running_wrk;
   uint64_t running_spn;
 
@@ -74,7 +74,7 @@ typedef struct cilkprof_stack_frame_t {
   /* uint64_t local_wrk; */
 
   // Local continuation span of this function
-  /* uint64_t local_contin; */
+  uint64_t local_contin;
   // Local span of this function
   uint64_t local_spn;
 
@@ -156,7 +156,7 @@ void cilkprof_c_fn_frame_init(c_fn_frame_t *c_fn_frame) {
   c_fn_frame->function = (uintptr_t)NULL;
 
   c_fn_frame->local_wrk = 0;
-  c_fn_frame->local_contin = 0;
+  /* c_fn_frame->local_contin = 0; */
   c_fn_frame->running_wrk = 0;
   c_fn_frame->running_spn = 0;
 
@@ -181,7 +181,7 @@ void cilkprof_stack_frame_init(cilkprof_stack_frame_t *frame, FunctionType_t fun
 
   /* frame->local_wrk = 0; */
   frame->local_spn = 0;
-  /* frame->local_contin = 0; */
+  frame->local_contin = 0;
 
   /* frame->running_wrk = 0; */
 

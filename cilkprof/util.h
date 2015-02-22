@@ -6,18 +6,20 @@
 
 // Types of functions
 typedef enum {
-  MAIN,
-  SPAWNER,
-  HELPER,
-  C_FUNCTION,
+  EMPTY = 0,
+  IS_RECURSIVE = 1,
+  MAIN = 2,
+  SPAWNER = 4,
+  HELPER = 6,
+  C_FUNCTION = 8,
   FUNCTIONTYPE_END
 } FunctionType_t;
 
-typedef int32_t InstanceType_t;
-// Flags for instance types
-static const InstanceType_t RECORD = 0x1; 
-static const InstanceType_t TOP = 0x2; 
-static const InstanceType_t RECURSIVE = 0x4;
+/* typedef int32_t InstanceType_t; */
+/* // Flags for instance types */
+/* static const InstanceType_t RECORD = 0x1;  */
+/* static const InstanceType_t TOP = 0x2;  */
+/* static const InstanceType_t RECURSIVE = 0x4; */
 
 extern const char *FunctionType_str[FUNCTIONTYPE_END];
 

@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <assert.h>
 
-const char *FunctionType_str[FUNCTIONTYPE_END] = { "main", "cilk", "helper", "c" };
+const char *FunctionType_str[FUNCTIONTYPE_END] = { "empty", "recursive", "main", "INVALID", "cilk", "INVALID", "helper", "INVALID", "c" };
 
 mapping_list_t maps = { .head = NULL, .tail = NULL };
 

@@ -143,25 +143,28 @@ get_iaddr_record_const(uintptr_t iaddr, iaddr_table_t *tab) {
 
   // Scan linked list
   iaddr_record_t *record = *first_record;
-  iaddr_record_t *last_record = NULL;
-  while (NULL != record && iaddr != record->iaddr) {
+  iaddr_record_t *last_record;
+  if (NULL == record)
+    return record;
+
+  if (iaddr == record->iaddr)
+    return record;
+
+  do {
     last_record = record;
     record = record->next;
-  }
+  } while (NULL != record && iaddr != record->iaddr);
 
-  if (NULL == record) {
-    /* // Allocate a new record */
-    /* record = (iaddr_record_t*)malloc(sizeof(iaddr_record_t)); */
-    /* make_empty_iaddr_record(record); */
-    /* record->next = *first_record; */
-    /* *first_record = record;     */
-  } else if (NULL != last_record) {
-    // Move record to front
-    last_record->next = record->next;
-    record->next = *first_record;
-    *first_record = record;
-  }
+  if (NULL == record)
+    return record;
 
+  assert(NULL != last_record);
+
+  // Move record to front
+  last_record->next = record->next;
+  record->next = *first_record;
+  *first_record = record;
+  
 #if IADDR_CACHE
   // Place record at front of cache
   cache_el->record = record;
@@ -172,23 +175,6 @@ get_iaddr_record_const(uintptr_t iaddr, iaddr_table_t *tab) {
     tab->iaddr_cache = cache_el;
   }
 #endif
-
-  /* int disp; */
-  /* for (disp = 0; disp < min(MAX_DISPLACEMENT, (1 << tab->lg_capacity)); ++disp) { */
-  /*   if (empty_record_p(record) || iaddr == record->iaddr) { */
-  /*     break; */
-  /*   } */
-  /*   ++record; */
-  /*   // Wrap around to the beginning */
-  /*   if (&(tab->records[1 << tab->lg_capacity]) == record) { */
-  /*     record = &(tab->records[0]); */
-  /*   } */
-  /* } */
-
-  /* // Return false if the record was not found in the target area. */
-  /* if (min(MAX_DISPLACEMENT, (1 << tab->lg_capacity))  <= disp) { */
-  /*   return NULL; */
-  /* } */
 
   return record;
 }
@@ -239,33 +225,12 @@ get_iaddr_record(uintptr_t iaddr, iaddr_table_t **tab) {
   }
 
   return record;
-
-/* #if DEBUG_RESIZE */
-/*   int old_table_cap = 1 << (*tab)->lg_capacity; */
-/* #endif */
-
-/*   iaddr_record_t *entry; */
-/*   while (NULL == (entry = get_iaddr_record_const(iaddr, *tab))) { */
-
-/*     iaddr_table_t *new_tab = increase_table_capacity(*tab); */
-
-/*     assert(new_tab); */
-
-/*     free(*tab); */
-/*     *tab = new_tab; */
-/*   } */
-/* #if DEBUG_RESIZE */
-/*   if (1 << (*tab)->lg_capacity > 2 * old_table_cap) { */
-/*     fprintf(stderr, "get_iaddr_record: new table capacity %d\n", */
-/*     	    1 << (*tab)->lg_capacity); */
-/*   } */
-/* #endif */
-/*   return entry; */
 }
 
 // Add the given iaddr_record_t data to **tab.  Returns 1 if iaddr was
 // not previously on the stack, 0 if iaddr is already in the stack, -1
 // on error.
+__attribute__((always_inline))
 int32_t add_to_iaddr_table(iaddr_table_t **tab, uintptr_t iaddr) {
 
   iaddr_record_t *record = get_iaddr_record(iaddr, tab);

@@ -7,6 +7,12 @@
 typedef struct strand_ruler_t {
   uint64_t start;
   uint64_t stop;
+
+  /* uint32_t start_lo; */
+  /* uint32_t start_hi; */
+  /* uint32_t stop_lo; */
+  /* uint32_t stop_hi; */
+  
 } strand_ruler_t;
 
 
@@ -15,8 +21,9 @@ unsigned long long rdtsc(void)
 {
   unsigned hi, lo;
   __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
-  return (   ((unsigned long long)lo)
-	  | (((unsigned long long)hi)<<32));
+  return (unsigned long long)lo + (((unsigned long long)hi) << 32);
+  /* return (   ((unsigned long long)lo) */
+  /*         | (((unsigned long long)hi)<<32)); */
 }
 
 // Store the current "time" into TIMER.
@@ -36,17 +43,21 @@ static inline void init_strand_ruler(strand_ruler_t *strand_ruler) {
 
 static inline void start_strand(strand_ruler_t *strand_ruler) {
   gettime(&(strand_ruler->start));
+  /* __asm__ __volatile__ ("rdtsc" : "=a"(strand_ruler->start_lo), "=d"(strand_ruler->start_hi)); */
 }
 
 static inline void stop_strand(strand_ruler_t *strand_ruler) {
   gettime(&(strand_ruler->stop));
+  /* __asm__ __volatile__ ("rdtsc" : "=a"(strand_ruler->stop_lo), "=d"(strand_ruler->stop_hi)); */
 }
 
 static inline uint64_t measure_strand_length(strand_ruler_t *strand_ruler) {
   // End of strand
   stop_strand(strand_ruler);
-
   return elapsed_cycles(&(strand_ruler->start), &(strand_ruler->stop));
+
+  /* return ((uint64_t)(strand_ruler->stop_lo) + ((uint64_t)(strand_ruler->stop_hi) << 32)) */
+  /*     - ((uint64_t)(strand_ruler->start_lo) + ((uint64_t)(strand_ruler->start_hi) << 32)); */
 }
 
 #endif

@@ -5,7 +5,9 @@
 #include <inttypes.h>
 #include <assert.h>
 
+#ifndef NDEBUG
 #include "iaddrs.h"
+#endif
 
 #ifndef DEBUG_RESIZE
 #define DEBUG_RESIZE 0
@@ -15,38 +17,45 @@
  * Method implementations
  */
 // Starting capacity of the hash table is 2^2 entries.
-static const int START_LG_CAPACITY = 2;
+/* static */ const int START_CC_LG_CAPACITY = 2;
 
 // Threshold fraction of table size that can be in the linked list.
-static const int TABLE_CONSTANT = 3;
+/* static */ const int TABLE_CONSTANT = 3;
 
 int MIN_CAPACITY = 1;
+/* int MIN_LG_CAPACITY = START_CC_LG_CAPACITY; */
 
+#ifndef NDEBUG
 extern iaddr_table_t *call_site_table;
+#endif
 cc_hashtable_list_el_t *ll_free_list = NULL;
 
-static inline uint32_t index(uintptr_t call_site) {
+#ifndef NDEBUG
+static inline uint32_t cc_index(uintptr_t call_site) {
   iaddr_record_t *cs_record
       = get_iaddr_record_const(call_site, call_site_table);
   assert(call_site == cs_record->iaddr);
   return cs_record->index;
 }
+#endif
 
 // Return true if this entry is empty, false otherwise.
 bool empty_cc_entry_p(const cc_hashtable_entry_t *entry) {
-  return (0 == entry->rip);
+  /* return (0 == entry->rip); */
+  return (EMPTY == entry->func_type);
 }
 
 
 // Create an empty hashtable entry
 static void make_empty_cc_entry(cc_hashtable_entry_t *entry) {
-  entry->rip = 0;
+  /* entry->rip = 0; */
+  entry->func_type = EMPTY;
 }
 
 
 // Allocate an empty hash table with 2^lg_capacity entries
 static cc_hashtable_t* cc_hashtable_alloc(int lg_capacity) {
-  assert(lg_capacity >= START_LG_CAPACITY);
+  assert(lg_capacity >= START_CC_LG_CAPACITY);
   size_t capacity = 1 << lg_capacity;
   cc_hashtable_t *table =
     (cc_hashtable_t*)malloc(sizeof(cc_hashtable_t)
@@ -68,24 +77,28 @@ static cc_hashtable_t* cc_hashtable_alloc(int lg_capacity) {
 // Create a new, empty hashtable.  Returns a pointer to the hashtable
 // created.
 cc_hashtable_t* cc_hashtable_create(void) {
-  cc_hashtable_t *tab = cc_hashtable_alloc(START_LG_CAPACITY);
-  for (size_t i = 0; i < (1 << START_LG_CAPACITY); ++i) {
+  cc_hashtable_t *tab = cc_hashtable_alloc(START_CC_LG_CAPACITY);
+  for (size_t i = 0; i < (1 << START_CC_LG_CAPACITY); ++i) {
     make_empty_cc_entry(&(tab->entries[i]));
   }
   return tab;
 }
 
+#ifndef NDEBUG
 static inline
 int can_override_entry(cc_hashtable_entry_t *entry, uintptr_t new_rip) {
   // used to be this:
   // entry->rip == new_rip && entry->height == new_height
   return (entry->rip == new_rip);
 }
+#endif
 
 static inline
 void combine_entries(cc_hashtable_entry_t *entry,
                      const cc_hashtable_entry_t *entry_add) {
-  entry->is_recursive |= entry_add->is_recursive;
+  /* entry->is_recursive |= entry_add->is_recursive; */
+  assert((entry->func_type & ~IS_RECURSIVE) == (entry_add->func_type & ~IS_RECURSIVE));
+  entry->func_type |= (IS_RECURSIVE & entry_add->func_type);
   entry->local_wrk += entry_add->local_wrk;
   entry->local_spn += entry_add->local_spn;
   entry->local_count += entry_add->local_count;
@@ -144,24 +157,24 @@ void combine_entries(cc_hashtable_entry_t *entry,
   /* } */
 }
 
-// Helper function to get the entry in tab corresponding to rip.
-// Returns a pointer to the entry if it can find a place to store it,
-// NULL otherwise.
-cc_hashtable_entry_t*
-get_cc_hashtable_entry_const(uintptr_t rip, cc_hashtable_t *tab) {
+/* // Helper function to get the entry in tab corresponding to rip. */
+/* // Returns a pointer to the entry if it can find a place to store it, */
+/* // NULL otherwise. */
+/* cc_hashtable_entry_t* */
+/* get_cc_hashtable_entry_const(uintptr_t rip, cc_hashtable_t *tab) { */
 
-  assert((uintptr_t)NULL != rip);
+/*   assert((uintptr_t)NULL != rip); */
 
-  uint32_t cs_index = index(rip);
-  if (cs_index < (1 << tab->lg_capacity)) {
-    return &(tab->entries[cs_index]);
-  }
-  return NULL;
-}
+/*   uint32_t cs_index = cc_index(rip); */
+/*   if (cs_index < (1 << tab->lg_capacity)) { */
+/*     return &(tab->entries[cs_index]); */
+/*   } */
+/*   return NULL; */
+/* } */
 
 
 // Return a hashtable with the contents of tab and more capacity.
-static cc_hashtable_t* increase_table_capacity(const cc_hashtable_t *tab) {
+static cc_hashtable_t* increase_cc_table_capacity(const cc_hashtable_t *tab) {
 
   int new_lg_capacity;
   if ((1 << tab->lg_capacity) < MIN_CAPACITY) {
@@ -172,8 +185,11 @@ static cc_hashtable_t* increase_table_capacity(const cc_hashtable_t *tab) {
     x |= x >> 8;
     x |= x >> 16;
     new_lg_capacity = __builtin_ctz(x + 1);
+    /* new_lg_capacity = MIN_LG_CAPACITY; */
   } else {
+#ifndef NDEBUG
     fprintf(stderr, "this should not be reachable\n");
+#endif
     new_lg_capacity = tab->lg_capacity + 1;
   }
   cc_hashtable_t *new_tab;
@@ -203,13 +219,38 @@ static cc_hashtable_t* increase_table_capacity(const cc_hashtable_t *tab) {
 }
 
 
+/* // Add entry to tab, resizing tab if necessary.  Returns a pointer to */
+/* // the entry if it can find a place to store it, NULL otherwise. */
+/* static __attribute__((always_inline)) cc_hashtable_entry_t* */
+/* get_cc_hashtable_entry(uintptr_t rip, cc_hashtable_t **tab) { */
+/*   cc_hashtable_entry_t *entry = get_cc_hashtable_entry_const(rip, *tab); */
+/*   if (NULL == entry) { */
+/*     cc_hashtable_t *new_tab = increase_cc_table_capacity(*tab); */
+
+/*     assert(new_tab); */
+/*     assert(new_tab->head == (*tab)->head); */
+/*     assert(new_tab->tail == (*tab)->tail); */
+/*     (*tab)->head = NULL; */
+/*     (*tab)->tail = NULL; */
+
+/*     free((*tab)->populated); */
+/*     free(*tab); */
+/*     *tab = new_tab; */
+
+/*     entry = get_cc_hashtable_entry_const(rip, *tab); */
+/*   } */
+
+/*   assert(NULL != entry); */
+/*   return entry; */
+/* } */
+
+
 // Add entry to tab, resizing tab if necessary.  Returns a pointer to
 // the entry if it can find a place to store it, NULL otherwise.
-static inline cc_hashtable_entry_t*
-get_cc_hashtable_entry(uintptr_t rip, cc_hashtable_t **tab) {
-  cc_hashtable_entry_t *entry = get_cc_hashtable_entry_const(rip, *tab);
-  if (NULL == entry) {
-    cc_hashtable_t *new_tab = increase_table_capacity(*tab);
+/* static */ __attribute__((always_inline)) cc_hashtable_entry_t*
+get_cc_hashtable_entry_at_index(uint32_t index, cc_hashtable_t **tab) {
+  if (index >= (1 << (*tab)->lg_capacity)) {
+    cc_hashtable_t *new_tab = increase_cc_table_capacity(*tab);
 
     assert(new_tab);
     assert(new_tab->head == (*tab)->head);
@@ -220,55 +261,14 @@ get_cc_hashtable_entry(uintptr_t rip, cc_hashtable_t **tab) {
     free((*tab)->populated);
     free(*tab);
     *tab = new_tab;
-
-    entry = get_cc_hashtable_entry_const(rip, *tab);
   }
 
-  assert(NULL != entry);
-  return entry;
-
-/* #if DEBUG_RESIZE */
-/*   int old_table_cap = 1 << (*tab)->lg_capacity; */
-/* #endif */
-
-/*   /\* // Clear the hashtable if necessary *\/ */
-/*   /\* if (0 == (*tab)->table_size) { *\/ */
-/*   /\*   for (size_t i = 0; i < (1 << (*tab)->lg_capacity); ++i) { *\/ */
-/*   /\*     make_empty_cc_entry(&((*tab)->entries[i])); *\/ */
-/*   /\*   } *\/ */
-/*   /\* } *\/ */
-
-/*   cc_hashtable_entry_t *entry; */
-/*   while (NULL == (entry = get_cc_hashtable_entry_const(rip, *tab))) { */
-
-/*     cc_hashtable_t *new_tab = increase_table_capacity(*tab); */
-
-/*     assert(new_tab); */
-/*     assert(new_tab->head == (*tab)->head); */
-/*     assert(new_tab->tail == (*tab)->tail); */
-/*     (*tab)->head = NULL; */
-/*     (*tab)->tail = NULL; */
-
-/*     free(*tab); */
-/*     *tab = new_tab; */
-/*   } */
-/* #if DEBUG_RESIZE */
-/*   if (1 << (*tab)->lg_capacity > 2 * old_table_cap) { */
-/*     fprintf(stderr, "get_cc_hashtable_entry: new table capacity %d\n", */
-/*     	    1 << (*tab)->lg_capacity); */
-/*   } */
-/* #endif */
-/*   return entry; */
+  return &((*tab)->entries[index]);
 }
+
 
 static inline
 void flush_cc_hashtable_list(cc_hashtable_t **tab) {
-  /* // Clear the hashtable if necessary */
-  /* if (0 == (*tab)->table_size) { */
-  /*   for (size_t i = 0; i < (1 << (*tab)->lg_capacity); ++i) { */
-  /*     make_empty_cc_entry(&((*tab)->entries[i])); */
-  /*   } */
-  /* } */
 
   // Flush list into table
   cc_hashtable_list_el_t *lst_entry = (*tab)->head;
@@ -284,14 +284,17 @@ void flush_cc_hashtable_list(cc_hashtable_t **tab) {
 
     cc_hashtable_entry_t *tab_entry;
 
-    tab_entry = get_cc_hashtable_entry(entry->rip, tab);
+    /* tab_entry = get_cc_hashtable_entry(entry->rip, tab); */
+    tab_entry = get_cc_hashtable_entry_at_index(lst_entry->index, tab);
     assert(NULL != tab_entry);
     assert(empty_cc_entry_p(tab_entry) || can_override_entry(tab_entry, entry->rip));
 
     if (empty_cc_entry_p(tab_entry)) {
       // the compiler will do a struct copy
       *tab_entry = *entry;
-      (*tab)->populated[(*tab)->table_size] = index(entry->rip);
+      /* (*tab)->populated[(*tab)->table_size] = cc_index(entry->rip); */
+      (*tab)->populated[(*tab)->table_size] = lst_entry->index;
+      assert(lst_entry->index == cc_index(entry->rip));
       ++(*tab)->table_size;
     } else {
       combine_entries(tab_entry, entry);
@@ -321,18 +324,24 @@ void flush_cc_hashtable(cc_hashtable_t **tab) {
     assert((*tab)->list_size == 0);
 }
 
+
 // Add the given cc_hashtable_entry_t data to **tab.  Returns true if
 // data was successfully added, false otherwise.
+__attribute__((always_inline))
 bool add_to_cc_hashtable(cc_hashtable_t **tab,
-			 /* int32_t depth, bool is_top_level, */
-                         InstanceType_t inst_type,
-                         FunctionType_t func_type, uintptr_t rip, 
-			 uint64_t wrk, uint64_t spn,
+                         /* int32_t depth, bool is_top_level, */
+                         /* InstanceType_t inst_type, */
+                         bool is_top_fn,
+                         FunctionType_t func_type,
+                         uint32_t index,
+#ifndef NDEBUG
+                         uintptr_t rip,
+#endif
+                         uint64_t wrk, uint64_t spn,
                          uint64_t local_wrk, uint64_t local_spn) {
-
-  /* if ((*tab)->list_size + (*tab)->table_size */
-  /*     < (1 << ((*tab)->lg_capacity - LG_FRAC_SIZE_THRESHOLD)) - 1) { */
-  if ((1 << (*tab)->lg_capacity) < MIN_CAPACITY &&
+  
+  if (index >= (1 << (*tab)->lg_capacity) &&
+      /* (1 << (*tab)->lg_capacity) < MIN_CAPACITY && */
       (*tab)->list_size < MIN_CAPACITY * TABLE_CONSTANT) {
     // If the table_size + list_size is sufficiently small, add entry
     // to linked list.
@@ -344,13 +353,18 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
       lst_entry = (cc_hashtable_list_el_t*)malloc(sizeof(cc_hashtable_list_el_t));
     }
 
-    lst_entry->entry.is_recursive = (0 != (RECURSIVE & inst_type));
+    lst_entry->index = index;
+
+    /* lst_entry->entry.is_recursive = (0 != (RECURSIVE & inst_type)); */
     lst_entry->entry.func_type = func_type;
+#ifndef NDEBUG
     lst_entry->entry.rip = rip;
+#endif
     lst_entry->entry.wrk = wrk;
     lst_entry->entry.spn = spn;
-    lst_entry->entry.count = (0 != (RECORD & inst_type));
-    if (TOP & inst_type) {
+    lst_entry->entry.count = 1; /* (0 != (RECORD & inst_type)); */
+    /* if (TOP & inst_type) { */
+    if (is_top_fn) {
       lst_entry->entry.top_wrk = wrk;
       lst_entry->entry.top_spn = spn;
       assert(0 != wrk);
@@ -385,18 +399,22 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
     }
 
     // Otherwise, add it to the table directly
-    cc_hashtable_entry_t *entry = get_cc_hashtable_entry(rip, tab);
+    /* cc_hashtable_entry_t *entry = get_cc_hashtable_entry(rip, tab); */
+    cc_hashtable_entry_t *entry = get_cc_hashtable_entry_at_index(index, tab);
     assert(NULL != entry);
     assert(empty_cc_entry_p(entry) || can_override_entry(entry, rip));
   
     if (empty_cc_entry_p(entry)) {
-      entry->is_recursive = (0 != (RECURSIVE & inst_type));
+      /* entry->is_recursive = (0 != (RECURSIVE & inst_type)); */
       entry->func_type = func_type;
+#ifndef NDEBUG
       entry->rip = rip;
+#endif
       entry->wrk = wrk;
       entry->spn = spn;
-      entry->count = (0 != (RECORD & inst_type));
-      if (TOP & inst_type) {
+      entry->count = 1; /* (0 != (RECORD & inst_type)); */
+      /* if (TOP & inst_type) { */
+      if (is_top_fn) {
         entry->top_wrk = wrk;
         entry->top_spn = spn;
         entry->top_count = 1;
@@ -408,17 +426,22 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
       entry->local_wrk = local_wrk;
       entry->local_spn = local_spn;
       entry->local_count = 1;
-      (*tab)->populated[ (*tab)->table_size ] = index(rip);
+      /* (*tab)->populated[ (*tab)->table_size ] = cc_index(rip); */
+      (*tab)->populated[ (*tab)->table_size ] = index;
+      assert(index == cc_index(rip));
       ++(*tab)->table_size;
     } else {
-      entry->is_recursive |= (0 != (RECURSIVE & inst_type));
+      /* entry->is_recursive |= (0 != (RECURSIVE & inst_type)); */
+      assert((entry->func_type & ~IS_RECURSIVE) == (func_type & ~IS_RECURSIVE));
+      entry->func_type |= func_type & IS_RECURSIVE;
       entry->local_wrk += local_wrk;
       entry->local_spn += local_spn;
       entry->local_count += 1;
       entry->wrk += wrk;
       entry->spn += spn;
-      entry->count += (0 != (RECORD & inst_type));
-      if (TOP & inst_type) {
+      entry->count += 1; /* (0 != (RECORD & inst_type)); */
+      /* if (TOP & inst_type) { */
+      if (is_top_fn) {
         entry->top_wrk += wrk;
         entry->top_spn += spn;
         entry->top_count += 1;
@@ -455,9 +478,106 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
   return true;
 }
 
+// Add the given cc_hashtable_entry_t data to **tab.  Returns true if
+// data was successfully added, false otherwise.
+__attribute__((always_inline))
+bool add_local_to_cc_hashtable(cc_hashtable_t **tab,
+                               FunctionType_t func_type,
+                               uint32_t index,
+#ifndef NDEBUG
+                               uintptr_t rip,
+#endif
+                               uint64_t local_wrk, uint64_t local_spn) {
+
+  if (index >= (1 << (*tab)->lg_capacity) &&
+      /* (1 << (*tab)->lg_capacity) < MIN_CAPACITY && */
+      (*tab)->list_size < MIN_CAPACITY * TABLE_CONSTANT) {
+    // If the table_size + list_size is sufficiently small, add entry
+    // to linked list.
+    cc_hashtable_list_el_t *lst_entry;
+    if (NULL != ll_free_list) {
+      lst_entry = ll_free_list;
+      ll_free_list = ll_free_list->next;
+    } else {
+      lst_entry = (cc_hashtable_list_el_t*)malloc(sizeof(cc_hashtable_list_el_t));
+    }
+
+    lst_entry->index = index;
+
+    /* lst_entry->entry.is_recursive = 0; */
+    lst_entry->entry.func_type = func_type;
+#ifndef NDEBUG
+    lst_entry->entry.rip = rip;
+#endif
+    lst_entry->entry.wrk = 0;
+    lst_entry->entry.spn = 0;
+    lst_entry->entry.count = 0;
+    lst_entry->entry.top_wrk = 0;
+    lst_entry->entry.top_spn = 0;
+    lst_entry->entry.top_count = 0;
+    lst_entry->entry.local_wrk = local_wrk;
+    lst_entry->entry.local_spn = local_spn;
+    lst_entry->entry.local_count = 1;
+    lst_entry->next = NULL;
+
+    if (NULL == (*tab)->tail) {
+      (*tab)->tail = lst_entry;
+      assert(NULL == (*tab)->head);
+      (*tab)->head = lst_entry;
+    } else {
+      (*tab)->tail->next = lst_entry;
+      (*tab)->tail = lst_entry;
+    }
+
+    // Increment list size
+    ++(*tab)->list_size;
+
+  } else {
+    
+    if ((*tab)->list_size > 0) {
+      assert((*tab)->head != NULL);
+      flush_cc_hashtable_list(tab);
+    }
+
+    // Otherwise, add it to the table directly
+    /* cc_hashtable_entry_t *entry = get_cc_hashtable_entry(rip, tab); */
+    cc_hashtable_entry_t *entry = get_cc_hashtable_entry_at_index(index, tab);
+    assert(NULL != entry);
+    assert(empty_cc_entry_p(entry) || can_override_entry(entry, rip));
+  
+    if (empty_cc_entry_p(entry)) {
+      /* entry->is_recursive = 0; */
+      entry->func_type = func_type;
+#ifndef NDEBUG
+      entry->rip = rip;
+#endif
+      entry->wrk = 0;
+      entry->spn = 0;
+      entry->count = 0;
+      entry->top_wrk = 0;
+      entry->top_spn = 0;
+      entry->top_count = 0;
+      entry->local_wrk = local_wrk;
+      entry->local_spn = local_spn;
+      entry->local_count = 1;
+      (*tab)->populated[ (*tab)->table_size ] = index;
+      ++(*tab)->table_size;
+    } else {
+      assert(rip == entry->rip);
+      /* entry->is_recursive |= (0 != (RECURSIVE & inst_type)); */
+      entry->local_wrk += local_wrk;
+      entry->local_spn += local_spn;
+      entry->local_count += 1;
+    }
+  }
+
+  return true;
+}
+
 // Add the cc_hashtable **right into the cc_hashtable **left.  The
 // result will appear in **left, and **right might be modified in the
 // process.
+__attribute__((always_inline))
 cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left, cc_hashtable_t **right) {
 
   /* fprintf(stderr, "add_cc_hashtables(%p, %p)\n", left, right); */
@@ -491,13 +611,6 @@ cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left, cc_hashtable_t **right)
   /* fprintf(stderr, "list_size = %d, table_size = %d, lg_capacity = %d\n", */
   /* 	  (*left)->list_size, (*left)->table_size, (*left)->lg_capacity); */
 
-  /* if ((*left)->list_size > 0 && */
-  /*     (*left)->list_size + (*left)->table_size */
-  /*     >= (1 << ((*left)->lg_capacity - LG_FRAC_SIZE_THRESHOLD))) { */
-  /*   /\* fprintf(stderr, "add_cc_hashtables: flush_cc_hashtable_list(%p)\n", left); *\/ */
-  /*   flush_cc_hashtable_list(left); */
-  /* } */
-
   if ((*left)->list_size >= MIN_CAPACITY * TABLE_CONSTANT) {
     flush_cc_hashtable_list(left);
   }
@@ -522,24 +635,6 @@ cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left, cc_hashtable_t **right)
     }
 
   }
-
-  /* for (size_t i = 0; i < (1 << (*right)->lg_capacity); ++i) { */
-  /*   r_entry = &((*right)->entries[i]); */
-  /*   if (!empty_cc_entry_p(r_entry)) { */
-
-  /*     l_entry = get_cc_hashtable_entry(r_entry->rip, left); */
-  /*     assert (NULL != l_entry); */
-  /*     assert(empty_cc_entry_p(l_entry) || can_override_entry(l_entry, r_entry->rip)); */
-
-  /*     if (empty_cc_entry_p(l_entry)) { */
-  /*       // let the compiler do the struct copy */
-  /*       *l_entry = *r_entry; */
-  /*       ++(*left)->table_size; */
-  /*     } else { */
-  /*       combine_entries(l_entry, r_entry); */
-  /*     } */
-  /*   } */
-  /* } */
 
   return *left;
 }

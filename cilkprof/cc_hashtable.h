@@ -16,10 +16,11 @@ typedef struct {
   // and non-recursive functions.
   /* int32_t depth; */
 
-  // Flag denoting whether this call site ever calls itself
-  bool is_recursive;
+  /* // Flag denoting whether this call site ever calls itself */
+  /* bool is_recursive; */
 
-  // Function type 
+  // Function type.  Least-significant bit indicates whether the
+  // function is recursive.
   FunctionType_t func_type;
 
   // Number of invocations of rip, excluding recursive instances.
@@ -29,8 +30,15 @@ typedef struct {
   // Total number of invocations of rip.
   uint32_t local_count;
 
+#ifndef NDEBUG
   // Return address that identifies call site
   uintptr_t rip;
+#endif
+
+  // Local work associated with rip
+  uint64_t local_wrk;
+  // Local span associated with rip
+  uint64_t local_spn;
 
   // Work associated with rip, excluding recursive instances
   uint64_t wrk;
@@ -42,20 +50,18 @@ typedef struct {
   // Span associated with top-level invocations of rip
   uint64_t top_spn;
 
-  // Local work associated with rip
-  uint64_t local_wrk;
-  // Local span associated with rip
-  uint64_t local_spn;
-
 } cc_hashtable_entry_t;
 
 // Structure for making a linked list of cc_hashtable entries
 typedef struct cc_hashtable_list_el_t {
-  // Hashtable entry data
-  cc_hashtable_entry_t entry;
+  // Index in table for this entry
+  uint32_t index;
 
   // Pointer to next entry in table
   struct cc_hashtable_list_el_t* next;
+
+  // Hashtable entry data
+  cc_hashtable_entry_t entry;
 
 } cc_hashtable_list_el_t;
 
@@ -91,13 +97,35 @@ bool empty_cc_entry_p(const cc_hashtable_entry_t *entry);
 cc_hashtable_t* cc_hashtable_create(void);
 void clear_cc_hashtable(cc_hashtable_t *tab);
 void flush_cc_hashtable(cc_hashtable_t **tab);
-cc_hashtable_entry_t*
-get_cc_hashtable_entry_const(uintptr_t rip, cc_hashtable_t *tab);
+/* cc_hashtable_entry_t* */
+/* get_cc_hashtable_entry_const(uintptr_t rip, cc_hashtable_t *tab); */
+/* bool add_to_cc_hashtable(cc_hashtable_t **tab, */
+/* 			 InstanceType_t inst_type, */
+/*                          FunctionType_t func_type, uintptr_t rip, */
+/* 			 uint64_t wrk, uint64_t spn, */
+/*                          uint64_t local_wrk, uint64_t local_spn); */
+/* bool add_local_to_cc_hashtable(cc_hashtable_t **tab, */
+/*                                /\* InstanceType_t inst_type, *\/ */
+/*                                FunctionType_t func_type, uintptr_t rip, */
+/*                                /\* uint64_t wrk, uint64_t spn, *\/ */
+/*                                uint64_t local_wrk, uint64_t local_spn); */
 bool add_to_cc_hashtable(cc_hashtable_t **tab,
-			 InstanceType_t inst_type,
-                         FunctionType_t func_type, uintptr_t rip,
-			 uint64_t wrk, uint64_t spn,
+                         /* InstanceType_t inst_type, */
+                         bool is_top_fn,
+                         FunctionType_t func_type,
+                         uint32_t index,
+#ifndef NDEBUG
+                         uintptr_t rip,
+#endif
+                         uint64_t wrk, uint64_t spn,
                          uint64_t local_wrk, uint64_t local_spn);
+bool add_local_to_cc_hashtable(cc_hashtable_t **tab,
+                               FunctionType_t func_type,
+                               uint32_t index,
+#ifndef NDEBUG
+                               uintptr_t rip,
+#endif
+                               uint64_t local_wrk, uint64_t local_spn);
 cc_hashtable_t* add_cc_hashtables(cc_hashtable_t **left,
 				  cc_hashtable_t **right);
 void free_cc_hashtable(cc_hashtable_t *tab);
