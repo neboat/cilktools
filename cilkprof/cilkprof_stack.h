@@ -19,16 +19,25 @@
 #include "strand_hashtable.h"
 #endif
 
+// Used to size call site and function status vectors
+const int START_STATUS_VECTOR_SIZE = 4;
+
 typedef struct c_fn_frame_t {
   // We don't have that many different flags yet,
   // so we can just use bools.
   bool top_cs;
   bool top_fn;
 
+  // Indexes for this function
+  int cs_index;
+  int fn_index;
+
+#ifndef NDEBUG
   // Return address of this function
   uintptr_t rip;
   // Address of this function
   uintptr_t function;
+#endif
 
   // Work and span values to store for every function
   uint64_t local_wrk;
@@ -111,11 +120,26 @@ typedef struct cilkprof_stack_frame_t {
 } cilkprof_stack_frame_t;
 
 
+// Status flags for a call site or function
+typedef uint32_t iaddr_status_t;
+const iaddr_status_t EMPTY_STATUS = 0;
+// We use the IS_RECURSIVE FunctionType_t, which is represented as
+// 0x1, as an iaddr_status_t flag.  The other flags are chosen to
+// accomodate this.
+const iaddr_status_t RECURSIVE = (iaddr_status_t)IS_RECURSIVE;
+const iaddr_status_t ON_STACK = 0x2;
+
 // Type for a cilkprof stack
 typedef struct {
   // Flag to indicate whether user code is being executed.  This flag
   // is mostly used for debugging.
   bool in_user_code;
+
+  // Capacity of call-site status vector
+  int cs_status_capacity;
+
+  // Capacity of function status vector
+  int fn_status_capacity;
 
 #if COMPUTE_STRAND_DATA
   // Endpoints of currently executing strand
@@ -126,11 +150,10 @@ typedef struct {
   // Tool for measuring the length of a strand
   strand_ruler_t strand_ruler;
 
-  // Free list of C function frames
-  c_fn_frame_t *c_fn_free_list;
-
-  // Free list of cilkprof stack frames
-  cilkprof_stack_frame_t *sf_free_list;
+  // Vector of status flags for different call sites
+  iaddr_status_t *cs_status;
+  // Vector of status flags for different functions
+  iaddr_status_t *fn_status;
 
   // Pointer to bottom of the stack, onto which frames are pushed.
   cilkprof_stack_frame_t *bot;
@@ -141,6 +164,12 @@ typedef struct {
   // Strand data associated with running work
   strand_hashtable_t* strand_wrk_table;
 #endif
+
+  // Free list of C function frames
+  c_fn_frame_t *c_fn_free_list;
+
+  // Free list of cilkprof stack frames
+  cilkprof_stack_frame_t *sf_free_list;
 } cilkprof_stack_t;
 
 
@@ -152,8 +181,13 @@ void cilkprof_c_fn_frame_init(c_fn_frame_t *c_fn_frame) {
   c_fn_frame->top_cs = false;
   c_fn_frame->top_fn = false;
 
+  c_fn_frame->cs_index = -1;
+  c_fn_frame->fn_index = -1;
+
+#ifndef NDEBUG
   c_fn_frame->rip = (uintptr_t)NULL;
   c_fn_frame->function = (uintptr_t)NULL;
+#endif
 
   c_fn_frame->local_wrk = 0;
   /* c_fn_frame->local_contin = 0; */
@@ -286,24 +320,53 @@ cilkprof_stack_frame_t* cilkprof_stack_push(cilkprof_stack_t *stack, FunctionTyp
 // Initializes the cilkprof stack
 void cilkprof_stack_init(cilkprof_stack_t *stack, FunctionType_t func_type)
 {
-  stack->sf_free_list = NULL;
+  stack->in_user_code = false;
   stack->bot = NULL;
+  stack->sf_free_list = NULL;
+  stack->c_fn_free_list = NULL;
+
   cilkprof_stack_push(stack, func_type);
-  /* cilkprof_stack_frame_t *new_frame = */
-  /*   (cilkprof_stack_frame_t *)malloc(sizeof(cilkprof_stack_frame_t)); */
-  /* cilkprof_stack_frame_init(new_frame, func_type); */
-  /* stack->bot = new_frame; */
 
   stack->wrk_table = cc_hashtable_create();
 #if COMPUTE_STRAND_DATA
   stack->strand_wrk_table = strand_hashtable_create();
 #endif
-  /* stack->unique_call_sites = NULL; */
+
+  stack->cs_status_capacity = START_STATUS_VECTOR_SIZE;
+  stack->fn_status_capacity = START_STATUS_VECTOR_SIZE;
+
+  stack->cs_status = (iaddr_status_t*)malloc(sizeof(iaddr_status_t)
+                                             * START_STATUS_VECTOR_SIZE);
+
+  stack->fn_status = (iaddr_status_t*)malloc(sizeof(iaddr_status_t)
+                                             * START_STATUS_VECTOR_SIZE);
+
+  for (int i = 0; i < START_STATUS_VECTOR_SIZE; ++i) {
+    stack->cs_status[i] = EMPTY_STATUS;
+    stack->fn_status[i] = EMPTY_STATUS;
+  }
 
   init_strand_ruler(&(stack->strand_ruler));
-  stack->in_user_code = false;
 }
 
+// Doubles the capacity of a status vector
+void resize_status_vector(iaddr_status_t **old_status_vec,
+                          int *old_vec_capacity) {
+  int new_vec_capacity = *old_vec_capacity * 2;
+  iaddr_status_t *new_status_vec = (iaddr_status_t*)malloc(sizeof(iaddr_status_t)
+                                                           * new_vec_capacity);
+  int i;
+  for (i = 0; i < *old_vec_capacity; ++i) {
+    new_status_vec[i] = (*old_status_vec)[i];
+  }
+  for ( ; i < new_vec_capacity; ++i) {
+    new_status_vec[i] = EMPTY_STATUS;
+  }
+
+  free(*old_status_vec);
+  *old_status_vec = new_status_vec;
+  *old_vec_capacity = new_vec_capacity;
+}
 
 // Pops the bottommost C frame off of the stack
 // stack->bot->c_fn_frame, and returns a pointer to it.

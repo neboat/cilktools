@@ -7,6 +7,7 @@
 
 #ifndef NDEBUG
 #include "iaddrs.h"
+#include "util.h"
 #endif
 
 #ifndef DEBUG_RESIZE
@@ -31,10 +32,11 @@ extern iaddr_table_t *call_site_table;
 cc_hashtable_list_el_t *ll_free_list = NULL;
 
 #ifndef NDEBUG
-static inline uint32_t cc_index(uintptr_t call_site) {
+static inline uint32_t cc_index(uintptr_t call_site, FunctionType_t func_type) {
   iaddr_record_t *cs_record
-      = get_iaddr_record_const(call_site, call_site_table);
+      = get_iaddr_record_const(call_site, func_type, call_site_table);
   assert(call_site == cs_record->iaddr);
+  assert(func_type == cs_record->func_type);
   return cs_record->index;
 }
 #endif
@@ -97,6 +99,10 @@ static inline
 void combine_entries(cc_hashtable_entry_t *entry,
                      const cc_hashtable_entry_t *entry_add) {
   /* entry->is_recursive |= entry_add->is_recursive; */
+  /* if ((entry->func_type & ~IS_RECURSIVE) != (entry_add->func_type & ~IS_RECURSIVE)) { */
+  /*   fprintf(stderr, "rip = %p, entry->func_type = %d, entry_add->func_type = %d\n", */
+  /*           entry->rip, entry->func_type, entry_add->func_type); */
+  /* } */
   assert((entry->func_type & ~IS_RECURSIVE) == (entry_add->func_type & ~IS_RECURSIVE));
   entry->func_type |= (IS_RECURSIVE & entry_add->func_type);
   entry->local_wrk += entry_add->local_wrk;
@@ -294,7 +300,7 @@ void flush_cc_hashtable_list(cc_hashtable_t **tab) {
       *tab_entry = *entry;
       /* (*tab)->populated[(*tab)->table_size] = cc_index(entry->rip); */
       (*tab)->populated[(*tab)->table_size] = lst_entry->index;
-      assert(lst_entry->index == cc_index(entry->rip));
+      assert(lst_entry->index == cc_index(entry->rip, (entry->func_type & ~IS_RECURSIVE)));
       ++(*tab)->table_size;
     } else {
       combine_entries(tab_entry, entry);
@@ -428,10 +434,14 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
       entry->local_count = 1;
       /* (*tab)->populated[ (*tab)->table_size ] = cc_index(rip); */
       (*tab)->populated[ (*tab)->table_size ] = index;
-      assert(index == cc_index(rip));
+      assert(index == cc_index(rip, (func_type & ~IS_RECURSIVE)));
       ++(*tab)->table_size;
     } else {
       /* entry->is_recursive |= (0 != (RECURSIVE & inst_type)); */
+      /* if ((entry->func_type & ~IS_RECURSIVE) != (func_type & ~IS_RECURSIVE)) { */
+      /*   fprintf(stderr, "(%p) entry->func_type = %d, (%p) entry_add->func_type = %d\n", */
+      /*           entry->rip, entry->func_type, rip, func_type); */
+      /* } */
       assert((entry->func_type & ~IS_RECURSIVE) == (func_type & ~IS_RECURSIVE));
       entry->func_type |= func_type & IS_RECURSIVE;
       entry->local_wrk += local_wrk;

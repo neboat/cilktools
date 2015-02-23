@@ -58,8 +58,9 @@ static inline bool empty_record_p(const iaddr_record_t *entry) {
 
 
 // Create an empty hashtable entry
-static void make_empty_iaddr_record(iaddr_record_t *entry) {
+static inline void make_empty_iaddr_record(iaddr_record_t *entry) {
   entry->iaddr = (uintptr_t)NULL;
+  entry->func_type = EMPTY;
 }
 
 
@@ -110,7 +111,7 @@ iaddr_table_t* iaddr_table_create(void) {
 // Returns a pointer to the entry if it can find a place to store it,
 // NULL otherwise.
 iaddr_record_t*
-get_iaddr_record_const(uintptr_t iaddr, iaddr_table_t *tab) {
+get_iaddr_record_const(uintptr_t iaddr, FunctionType_t func_type, iaddr_table_t *tab) {
 
   assert((uintptr_t)NULL != iaddr);
 
@@ -147,13 +148,14 @@ get_iaddr_record_const(uintptr_t iaddr, iaddr_table_t *tab) {
   if (NULL == record)
     return record;
 
-  if (iaddr == record->iaddr)
+  if (iaddr == record->iaddr && func_type == record->func_type)
     return record;
 
   do {
     last_record = record;
     record = record->next;
-  } while (NULL != record && iaddr != record->iaddr);
+  } while (NULL != record &&
+           (iaddr != record->iaddr || func_type != record->func_type));
 
   if (NULL == record)
     return record;
@@ -212,14 +214,27 @@ static iaddr_table_t* increase_table_capacity(const iaddr_table_t *tab) {
 // Add entry to tab, resizing tab if necessary.  Returns a pointer to
 // the entry if it can find a place to store it, NULL otherwise.
 static iaddr_record_t*
-get_iaddr_record(uintptr_t iaddr, iaddr_table_t **tab) {
-  iaddr_record_t *record = get_iaddr_record_const(iaddr, *tab);
-  iaddr_record_t **first_record = &((*tab)->records[hash(iaddr, (*tab)->lg_capacity)]);
+get_iaddr_record(uintptr_t iaddr, FunctionType_t func_type, iaddr_table_t **tab) {
+  iaddr_record_t *record = get_iaddr_record_const(iaddr, func_type, *tab);
 
   if (NULL == record) {
+    // Grow table if capacity exceeds 50%
+    if (((*tab)->table_size + 1) > (1 << ((*tab)->lg_capacity - 1))) {
+      iaddr_table_t *new_tab = increase_table_capacity(*tab);
+      assert(new_tab);
+      free(*tab);
+      *tab = new_tab;
+      record = get_iaddr_record_const(iaddr, func_type, *tab);
+      assert(NULL == record);
+    }
+
+    iaddr_record_t **first_record = &((*tab)->records[hash(iaddr, (*tab)->lg_capacity)]);
     // Allocate a new record
     record = (iaddr_record_t*)malloc(sizeof(iaddr_record_t));
-    make_empty_iaddr_record(record);
+    /* make_empty_iaddr_record(record); */
+    record->iaddr = iaddr;
+    record->func_type = func_type;
+    record->index = (*tab)->table_size++;
     record->next = *first_record;
     *first_record = record;
   }
@@ -227,42 +242,30 @@ get_iaddr_record(uintptr_t iaddr, iaddr_table_t **tab) {
   return record;
 }
 
-// Add the given iaddr_record_t data to **tab.  Returns 1 if iaddr was
-// not previously on the stack, 0 if iaddr is already in the stack, -1
-// on error.
+// Add the given iaddr_record_t data to **tab.  Returns index of
+// iaddr.
 __attribute__((always_inline))
-int32_t add_to_iaddr_table(iaddr_table_t **tab, uintptr_t iaddr) {
+int add_to_iaddr_table(iaddr_table_t **tab, uintptr_t iaddr, FunctionType_t func_type) {
 
-  iaddr_record_t *record = get_iaddr_record(iaddr, tab);
+  iaddr_record_t *record = get_iaddr_record(iaddr, func_type, tab);
   assert(NULL != record);
-
-  if (NULL == record) {
-    return -1;
-  }
   
-  if (empty_record_p(record)) {
-    // Grow table if capacity exceeds 50%
-    if (((*tab)->table_size + 1) > (1 << ((*tab)->lg_capacity - 1))) {
-      iaddr_table_t *new_tab = increase_table_capacity(*tab);
-      assert(new_tab);
-      free(*tab);
-      *tab = new_tab;
-      record = get_iaddr_record(iaddr, tab);
-      assert(empty_record_p(record));
-    }
-    record->iaddr = iaddr;
-    record->on_stack = true;
-    record->recursive = false;
-    record->index = (*tab)->table_size++;
-    return 1;
-  }
-  assert(record->iaddr == iaddr);
-  if (record->on_stack) {
-    record->recursive = true;
-    return 0;
-  }
-  record->on_stack = true;
-  return 1;
+  /* if (empty_record_p(record)) { */
+  /*   record->iaddr = iaddr; */
+  /*   record->func_type = func_type; */
+  /*   /\* record->on_stack = true; *\/ */
+  /*   /\* record->recursive = false; *\/ */
+  /*   record->index = (*tab)->table_size++; */
+  /*   /\* return 1; *\/ */
+  /* } */
+  return record->index;
+  /* assert(record->iaddr == iaddr); */
+  /* if (record->on_stack) { */
+  /*   record->recursive = true; */
+  /*   return 0; */
+  /* } */
+  /* record->on_stack = true; */
+  /* return 1; */
 }
 
 void iaddr_table_free(iaddr_table_t *tab) {

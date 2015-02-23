@@ -290,10 +290,11 @@ void cilk_tool_print(void) {
   fprintf(fout, "local work on span, local span on span, local parallelism on span, local count on span \n");
 
   // Parse tables
-  size_t span_table_entries_read = 0;
+  int span_table_entries_read = 0;
   for (size_t i = 0; i < (1 << (call_site_table->lg_capacity)); ++i) {
     iaddr_record_t *record = call_site_table->records[i];
-    while (NULL != record && (uintptr_t)NULL != record->iaddr) {
+    /* fprintf(stderr, "\n"); */
+    while (NULL != record /* && (uintptr_t)NULL != record->iaddr */) {
       /* fprintf(stderr, "rip %p (%d), ", record->iaddr, record->index); */
 
       assert(0 != record->iaddr);
@@ -489,6 +490,10 @@ void cilk_tool_print(void) {
   /* } */
   fclose(fout);
 
+  /* if (span_table_entries_read != span_table->table_size) { */
+  /*   fprintf(stderr, "read %d, table contains %d\n", */
+  /*           span_table_entries_read, span_table->table_size); */
+  /* } */
   assert(span_table_entries_read == span_table->table_size);
 
 #if COMPUTE_STRAND_DATA
@@ -635,16 +640,53 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* this_fn, void* rip)
   // Push new frame onto the stack
   cilkprof_stack_push(stack, SPAWNER);
 
+  uintptr_t cs = (uintptr_t)__builtin_extract_return_addr(rip);
+  uintptr_t fn = (uintptr_t)this_fn;
+
+  uint32_t cs_index = add_to_iaddr_table(&call_site_table, cs, SPAWNER);
+  stack->bot->c_fn_frame->cs_index = cs_index;
+  if (cs_index >= stack->cs_status_capacity) {
+    resize_status_vector(&(stack->cs_status), &(stack->cs_status_capacity));
+  }
+  if (stack->cs_status[cs_index] & ON_STACK) {
+    stack->bot->c_fn_frame->top_cs = false;
+    stack->bot->c_fn_frame->top_fn = false;
+    if (!(stack->cs_status[cs_index] & RECURSIVE)) {
+      stack->cs_status[cs_index] |= RECURSIVE;
+    }
+  } else {
+    stack->cs_status[cs_index] |= ON_STACK;
+    stack->bot->c_fn_frame->top_cs = true;
+
+    uint32_t fn_index = add_to_iaddr_table(&function_table, fn, SPAWNER);
+    stack->bot->c_fn_frame->fn_index = fn_index;
+    if (fn_index >= stack->fn_status_capacity) {
+      resize_status_vector(&(stack->fn_status), &(stack->fn_status_capacity));
+    }
+    if (stack->fn_status[fn_index] & ON_STACK) {
+      stack->bot->c_fn_frame->top_fn = false;
+      if (!(stack->fn_status[fn_index] & RECURSIVE)) {
+        stack->fn_status[fn_index] |= RECURSIVE;
+      }
+    } else {
+      stack->fn_status[fn_index] |= ON_STACK;
+      stack->bot->c_fn_frame->top_fn = true;
+    }
+  }
+
+
+#ifndef NDEBUG
   stack->bot->c_fn_frame->rip = (uintptr_t)__builtin_extract_return_addr(rip);
   stack->bot->c_fn_frame->function = (uintptr_t)this_fn;
+#endif
 
-  int32_t top_cs = add_to_iaddr_table(&call_site_table, stack->bot->c_fn_frame->rip);
-  assert(top_cs >= 0);
-  stack->bot->c_fn_frame->top_cs = (1 == top_cs);
+  /* int32_t top_cs = add_to_iaddr_table(&call_site_table, stack->bot->c_fn_frame->rip); */
+  /* assert(top_cs >= 0); */
+  /* stack->bot->c_fn_frame->top_cs = (1 == top_cs); */
 
-  int32_t top_fn = add_to_iaddr_table(&function_table, stack->bot->c_fn_frame->function);
-  assert(top_fn >= 0);
-  stack->bot->c_fn_frame->top_fn = (1 == top_fn);
+  /* int32_t top_fn = add_to_iaddr_table(&function_table, stack->bot->c_fn_frame->function); */
+  /* assert(top_fn >= 0); */
+  /* stack->bot->c_fn_frame->top_fn = (1 == top_fn); */
 
   MIN_CAPACITY = call_site_table->table_size;
   /* if (1 << MIN_LG_CAPACITY <= call_site_table->table_size) */
@@ -677,16 +719,53 @@ void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *this_fn, void *rip
   // Push new frame onto the stack
   cilkprof_stack_push(stack, HELPER);
 
+  uintptr_t cs = (uintptr_t)__builtin_extract_return_addr(rip);
+  uintptr_t fn = (uintptr_t)this_fn;
+
+
+  uint32_t cs_index = add_to_iaddr_table(&call_site_table, cs, HELPER);
+  stack->bot->c_fn_frame->cs_index = cs_index;
+  if (cs_index >= stack->cs_status_capacity) {
+    resize_status_vector(&(stack->cs_status), &(stack->cs_status_capacity));
+  }
+  if (stack->cs_status[cs_index] & ON_STACK) {
+    stack->bot->c_fn_frame->top_cs = false;
+    stack->bot->c_fn_frame->top_fn = false;
+    if (!(stack->cs_status[cs_index] & RECURSIVE)) {
+      stack->cs_status[cs_index] |= RECURSIVE;
+    }
+  } else {
+    stack->cs_status[cs_index] |= ON_STACK;
+    stack->bot->c_fn_frame->top_cs = true;
+
+    uint32_t fn_index = add_to_iaddr_table(&function_table, fn, HELPER);
+    stack->bot->c_fn_frame->fn_index = fn_index;
+    if (fn_index >= stack->fn_status_capacity) {
+      resize_status_vector(&(stack->fn_status), &(stack->fn_status_capacity));
+    }
+    if (stack->fn_status[fn_index] & ON_STACK) {
+      stack->bot->c_fn_frame->top_fn = false;
+      if (!(stack->fn_status[fn_index] & RECURSIVE)) {
+        stack->fn_status[fn_index] |= RECURSIVE;
+      }
+    } else {
+      stack->fn_status[fn_index] |= ON_STACK;
+      stack->bot->c_fn_frame->top_fn = true;
+    }
+  }
+
+#ifndef NDEBUG
   stack->bot->c_fn_frame->rip = (uintptr_t)__builtin_extract_return_addr(rip);
   stack->bot->c_fn_frame->function = (uintptr_t)this_fn;
+#endif
 
-  int32_t top_cs = add_to_iaddr_table(&call_site_table, stack->bot->c_fn_frame->rip);
-  assert(top_cs >= 0);
-  stack->bot->c_fn_frame->top_cs = (1 == top_cs);
+  /* int32_t top_cs = add_to_iaddr_table(&call_site_table, stack->bot->c_fn_frame->rip); */
+  /* assert(top_cs >= 0); */
+  /* stack->bot->c_fn_frame->top_cs = (1 == top_cs); */
 
-  int32_t top_fn = add_to_iaddr_table(&function_table, stack->bot->c_fn_frame->function);
-  assert(top_fn >= 0);
-  stack->bot->c_fn_frame->top_fn = (1 == top_fn);
+  /* int32_t top_fn = add_to_iaddr_table(&function_table, stack->bot->c_fn_frame->function); */
+  /* assert(top_fn >= 0); */
+  /* stack->bot->c_fn_frame->top_fn = (1 == top_fn); */
 
   MIN_CAPACITY = call_site_table->table_size;
   /* if (1 << MIN_LG_CAPACITY <= call_site_table->table_size) */
@@ -725,18 +804,41 @@ void cilk_tool_c_function_enter(void *this_fn, void *rip)
   if(!TOOL_INITIALIZED) { // We are entering main.
     cilk_tool_init(); // this will push the frame for MAIN and do a gettime
 
+    uintptr_t cs = (uintptr_t)__builtin_extract_return_addr(rip);
+    uintptr_t fn = (uintptr_t)this_fn;
+
+    uint32_t cs_index = add_to_iaddr_table(&call_site_table, cs, MAIN);
+    stack->bot->c_fn_frame->cs_index = cs_index;
+    if (cs_index >= stack->cs_status_capacity) {
+      resize_status_vector(&(stack->cs_status), &(stack->cs_status_capacity));
+    }
+    assert(0 == (stack->cs_status[cs_index] & ON_STACK));
+    stack->cs_status[cs_index] |= ON_STACK;
+    stack->bot->c_fn_frame->top_cs = true;
+
+    uint32_t fn_index = add_to_iaddr_table(&function_table, fn, MAIN);
+    stack->bot->c_fn_frame->fn_index = fn_index;
+    if (fn_index >= stack->fn_status_capacity) {
+      resize_status_vector(&(stack->fn_status), &(stack->fn_status_capacity));
+    }
+    assert(0 == (stack->fn_status[fn_index] & ON_STACK));
+    stack->fn_status[fn_index] |= ON_STACK;
+    stack->bot->c_fn_frame->top_fn = true;
+
+#ifndef NDEBUG
     stack->bot->c_fn_frame->rip = (uintptr_t)__builtin_extract_return_addr(rip);
     stack->bot->c_fn_frame->function = (uintptr_t)this_fn;
+#endif
 
-    int32_t top_cs = add_to_iaddr_table(&call_site_table, stack->bot->c_fn_frame->rip);
-    assert(top_cs == 1);
-    stack->bot->c_fn_frame->top_cs = true;
-    /* stack->bot->c_fn_frame->top_cs = (1 == top_cs); */
+    /* int32_t top_cs = add_to_iaddr_table(&call_site_table, stack->bot->c_fn_frame->rip); */
+    /* assert(top_cs == 1); */
+    /* stack->bot->c_fn_frame->top_cs = true; */
+    /* /\* stack->bot->c_fn_frame->top_cs = (1 == top_cs); *\/ */
 
-    int32_t top_fn = add_to_iaddr_table(&function_table, stack->bot->c_fn_frame->function);
-    assert(top_fn == 1);
-    stack->bot->c_fn_frame->top_fn = true;
-    /* stack->bot->c_fn_frame->top_fn = (1 == top_fn); */
+    /* int32_t top_fn = add_to_iaddr_table(&function_table, stack->bot->c_fn_frame->function); */
+    /* assert(top_fn == 1); */
+    /* stack->bot->c_fn_frame->top_fn = true; */
+    /* /\* stack->bot->c_fn_frame->top_fn = (1 == top_fn); *\/ */
 
     MIN_CAPACITY = call_site_table->table_size;
     /* if (1 << MIN_LG_CAPACITY <= call_site_table->table_size) */
@@ -764,26 +866,98 @@ void cilk_tool_c_function_enter(void *this_fn, void *rip)
 
     // Push new frame for this C function onto the stack
     /* cilkprof_stack_push(stack, C_FUNCTION); */
+#ifndef NDEBUG
     c_fn_frame_t* c_fn_frame = cilkprof_c_fn_push(stack);
+#else
+    cilkprof_c_fn_push(stack);
+#endif
+
+    uintptr_t cs = (uintptr_t)__builtin_extract_return_addr(rip);
+    uintptr_t fn = (uintptr_t)this_fn;
+
+    uint32_t cs_index = add_to_iaddr_table(&call_site_table, cs, C_FUNCTION);
+    stack->bot->c_fn_frame->cs_index = cs_index;
+    if (cs_index >= stack->cs_status_capacity) {
+      resize_status_vector(&(stack->cs_status), &(stack->cs_status_capacity));
+    }
+    if (stack->cs_status[cs_index] & ON_STACK) {
+      stack->bot->c_fn_frame->top_cs = false;
+      stack->bot->c_fn_frame->top_fn = false;
+      if (!(stack->cs_status[cs_index] & RECURSIVE)) {
+        stack->cs_status[cs_index] |= RECURSIVE;
+      }
+    } else {
+      stack->cs_status[cs_index] |= ON_STACK;
+      stack->bot->c_fn_frame->top_cs = true;
+      
+      uint32_t fn_index = add_to_iaddr_table(&function_table, fn, C_FUNCTION);
+      stack->bot->c_fn_frame->fn_index = fn_index;
+      if (fn_index >= stack->fn_status_capacity) {
+        resize_status_vector(&(stack->fn_status), &(stack->fn_status_capacity));
+      }
+      if (stack->fn_status[fn_index] & ON_STACK) {
+        stack->bot->c_fn_frame->top_fn = false;
+        if (!(stack->fn_status[fn_index] & RECURSIVE)) {
+          stack->fn_status[fn_index] |= RECURSIVE;
+        }
+      } else {
+        stack->fn_status[fn_index] |= ON_STACK;
+        stack->bot->c_fn_frame->top_fn = true;
+      }
+    }
+
+    /* uint32_t cs_index = add_to_iaddr_table(&call_site_table, cs); */
+    /* stack->bot->c_fn_frame->cs_index = cs_index; */
+    /* if (cs_index >= stack->cs_status_capacity) { */
+    /*   resize_status_vector(&(stack->cs_status), &(stack->cs_status_capacity)); */
+    /* } */
+    /* if (stack->cs_status[cs_index] & ON_STACK) { */
+    /*   if (!(stack->cs_status[cs_index] & RECURSIVE)) { */
+    /*     stack->cs_status[cs_index] |= RECURSIVE; */
+    /*   } */
+    /*   stack->bot->c_fn_frame->top_cs = false; */
+    /* } else { */
+    /*   stack->cs_status[cs_index] |= ON_STACK; */
+    /*   stack->bot->c_fn_frame->top_cs = true; */
+    /* } */
+
+    /* uint32_t fn_index = add_to_iaddr_table(&function_table, fn); */
+    /* stack->bot->c_fn_frame->fn_index = fn_index; */
+    /* if (fn_index >= stack->fn_status_capacity) { */
+    /*   resize_status_vector(&(stack->fn_status), &(stack->fn_status_capacity)); */
+    /* } */
+    /* if (stack->fn_status[fn_index] & ON_STACK) { */
+    /*   if (!(stack->fn_status[fn_index] & RECURSIVE)) { */
+    /*     stack->fn_status[fn_index] |= RECURSIVE; */
+    /*   } */
+    /*   stack->bot->c_fn_frame->top_fn = false; */
+    /* } else { */
+    /*   stack->fn_status[fn_index] |= ON_STACK; */
+    /*   stack->bot->c_fn_frame->top_fn = true; */
+    /* } */
+
+#ifndef NDEBUG
     c_fn_frame->rip = (uintptr_t)__builtin_extract_return_addr(rip);
     c_fn_frame->function = (uintptr_t)this_fn;
+#endif
 
-    if (NULL != stack->bot->c_fn_frame->parent &&
-        stack->bot->c_fn_frame->rip == stack->bot->c_fn_frame->parent->rip) {
-      stack->bot->c_fn_frame->top_cs = false;
-    } else {
-      int32_t top_cs = add_to_iaddr_table(&call_site_table, c_fn_frame->rip);
-      assert(top_cs >= 0);
-      c_fn_frame->top_cs = (1 == top_cs);
-    }
-    if (NULL != stack->bot->c_fn_frame->parent &&
-        stack->bot->c_fn_frame->function == stack->bot->c_fn_frame->parent->function) {
-      stack->bot->c_fn_frame->top_fn = false;
-    } else {
-      int32_t top_fn = add_to_iaddr_table(&function_table, c_fn_frame->function);
-      assert(top_fn >= 0);
-      c_fn_frame->top_fn = (1 == top_fn);
-    }
+    /* if (NULL != stack->bot->c_fn_frame->parent && */
+    /*     stack->bot->c_fn_frame->rip == stack->bot->c_fn_frame->parent->rip) { */
+    /*   stack->bot->c_fn_frame->top_cs = false; */
+    /* } else { */
+    /*   int32_t top_cs = add_to_iaddr_table(&call_site_table, c_fn_frame->rip); */
+    /*   assert(top_cs >= 0); */
+    /*   c_fn_frame->top_cs = (1 == top_cs); */
+    /* } */
+    /* if (NULL != stack->bot->c_fn_frame->parent && */
+    /*     stack->bot->c_fn_frame->function == stack->bot->c_fn_frame->parent->function) { */
+    /*   stack->bot->c_fn_frame->top_fn = false; */
+    /* } else { */
+    /*   int32_t top_fn = add_to_iaddr_table(&function_table, c_fn_frame->function); */
+    /*   assert(top_fn >= 0); */
+    /*   c_fn_frame->top_fn = (1 == top_fn); */
+    /* } */
+
     MIN_CAPACITY = call_site_table->table_size;
     /* if (1 << MIN_LG_CAPACITY <= call_site_table->table_size) */
     /*   ++MIN_LG_CAPACITY; */
@@ -810,16 +984,28 @@ void cilk_tool_c_function_leave(void *rip)
       MAIN == stack->bot->func_type &&
       NULL == stack->bot->c_fn_frame->parent) {
 
-    iaddr_record_t* cs_record = get_iaddr_record_const(stack->bot->c_fn_frame->rip, call_site_table);
-    assert(stack->bot->c_fn_frame->rip == cs_record->iaddr);
+    assert(stack->bot->c_fn_frame->top_cs || !stack->bot->c_fn_frame->top_fn);
     if (stack->bot->c_fn_frame->top_cs) {
-      cs_record->on_stack = false;
+      assert(stack->cs_status[stack->bot->c_fn_frame->cs_index] & ON_STACK);
+      stack->cs_status[stack->bot->c_fn_frame->cs_index] ^= ON_STACK;
+      
+      if (stack->bot->c_fn_frame->top_fn) {
+        assert(-1 != stack->bot->c_fn_frame->fn_index);
+        assert(stack->fn_status[stack->bot->c_fn_frame->fn_index] & ON_STACK);
+        stack->fn_status[stack->bot->c_fn_frame->fn_index] ^= ON_STACK;
+      }
     }
-    iaddr_record_t* fn_record = get_iaddr_record_const(stack->bot->c_fn_frame->function, function_table);
-    assert(stack->bot->c_fn_frame->function == fn_record->iaddr);
-    if (stack->bot->c_fn_frame->top_fn) {
-      fn_record->on_stack = false;
-    }
+
+    /* iaddr_record_t* cs_record = get_iaddr_record_const(stack->bot->c_fn_frame->rip, call_site_table); */
+    /* assert(stack->bot->c_fn_frame->rip == cs_record->iaddr); */
+    /* if (stack->bot->c_fn_frame->top_cs) { */
+    /*   cs_record->on_stack = false; */
+    /* } */
+    /* iaddr_record_t* fn_record = get_iaddr_record_const(stack->bot->c_fn_frame->function, function_table); */
+    /* assert(stack->bot->c_fn_frame->function == fn_record->iaddr); */
+    /* if (stack->bot->c_fn_frame->top_fn) { */
+    /*   fn_record->on_stack = false; */
+    /* } */
 
     cilk_tool_destroy();
   }
@@ -862,16 +1048,27 @@ void cilk_tool_c_function_leave(void *rip)
   old_bottom->running_wrk += old_bottom->local_wrk;
   old_bottom->running_spn += old_bottom->local_wrk;
 
-  iaddr_record_t* cs_record = get_iaddr_record_const(old_bottom->rip, call_site_table);
-  assert(old_bottom->rip == cs_record->iaddr);
+  assert(old_bottom->top_cs || !old_bottom->top_fn);
   if (old_bottom->top_cs) {
-    cs_record->on_stack = false;
+    assert(stack->cs_status[old_bottom->cs_index] & ON_STACK);
+    stack->cs_status[old_bottom->cs_index] ^= ON_STACK;
+    if (old_bottom->top_fn) {
+      assert(-1 != old_bottom->fn_index);
+      assert(stack->fn_status[old_bottom->fn_index] & ON_STACK);
+      stack->fn_status[old_bottom->fn_index] ^= ON_STACK;
+    }
   }
-  if (old_bottom->top_fn) {
-    iaddr_record_t* fn_record = get_iaddr_record_const(old_bottom->function, function_table);
-    assert(old_bottom->function == fn_record->iaddr);
-    fn_record->on_stack = false;
-  }
+
+  /* iaddr_record_t* cs_record = get_iaddr_record_const(old_bottom->rip, call_site_table); */
+  /* assert(old_bottom->rip == cs_record->iaddr); */
+  /* if (old_bottom->top_cs) { */
+  /*   cs_record->on_stack = false; */
+  /* } */
+  /* if (old_bottom->top_fn) { */
+  /*   iaddr_record_t* fn_record = get_iaddr_record_const(old_bottom->function, function_table); */
+  /*   assert(old_bottom->function == fn_record->iaddr); */
+  /*   fn_record->on_stack = false; */
+  /* } */
 
   /* InstanceType_t inst_type */
   /*     = (RECURSIVE & -((InstanceType_t)(cs_record->recursive))) */
@@ -880,8 +1077,12 @@ void cilk_tool_c_function_leave(void *rip)
   /* InstanceType_t inst_type */
   /*     = (TOP & -((InstanceType_t)(stack->bot->c_fn_frame->top_fn))); */
 
+  /* FunctionType_t func_type =  */
+  /*     C_FUNCTION | (IS_RECURSIVE & -((FunctionType_t)(cs_record->recursive))); */
+  uint32_t cs_index = old_bottom->cs_index;
   FunctionType_t func_type = 
-      C_FUNCTION | (IS_RECURSIVE & -((FunctionType_t)(cs_record->recursive)));
+      C_FUNCTION | (FunctionType_t)(stack->cs_status[cs_index] & RECURSIVE);
+  assert((stack->cs_status[cs_index] & RECURSIVE) || !(func_type & IS_RECURSIVE));
 
   stack->bot->c_fn_frame->running_wrk += old_bottom->running_wrk;
   stack->bot->c_fn_frame->running_spn += old_bottom->running_spn;
@@ -896,7 +1097,7 @@ void cilk_tool_c_function_leave(void *rip)
                                       /* inst_type /\* | RECORD *\/, */
                                       stack->bot->c_fn_frame->top_fn,
                                       func_type,
-                                      cs_record->index,
+                                      cs_index,
 #ifndef NDEBUG
                                       old_bottom->rip,
 #endif
@@ -910,7 +1111,7 @@ void cilk_tool_c_function_leave(void *rip)
                                       /* inst_type /\* | RECORD *\/, */
                                       stack->bot->c_fn_frame->top_fn,
                                       func_type,
-                                      cs_record->index,
+                                      cs_index,
 #ifndef NDEBUG
                                       old_bottom->rip,
 #endif
@@ -924,7 +1125,7 @@ void cilk_tool_c_function_leave(void *rip)
     /* fprintf(stderr, "adding to wrk table\n"); */
     add_success = add_local_to_cc_hashtable(&(stack->wrk_table),
                                             func_type,
-                                            cs_record->index,
+                                            cs_index,
 #ifndef NDEBUG
                                             old_bottom->rip,
 #endif
@@ -934,7 +1135,7 @@ void cilk_tool_c_function_leave(void *rip)
     /* fprintf(stderr, "adding to contin table\n"); */
     add_success = add_local_to_cc_hashtable(&(stack->bot->contin_table),
                                             func_type,
-                                            cs_record->index,
+                                            cs_index,
 #ifndef NDEBUG
                                             old_bottom->rip,
 #endif
@@ -1195,16 +1396,28 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 
   // Pop the stack
   old_bottom = cilkprof_stack_pop(stack);
-  iaddr_record_t* cs_record = get_iaddr_record_const(old_bottom->c_fn_frame->rip, call_site_table);
-  assert(old_bottom->c_fn_frame->rip == cs_record->iaddr);
+
+  assert(old_bottom->c_fn_frame->top_cs || !old_bottom->c_fn_frame->top_fn);
   if (old_bottom->c_fn_frame->top_cs) {
-    cs_record->on_stack = false;
+    assert(stack->cs_status[old_bottom->c_fn_frame->cs_index] & ON_STACK);
+    stack->cs_status[old_bottom->c_fn_frame->cs_index] ^= ON_STACK;
+    if (old_bottom->c_fn_frame->top_fn) {
+      assert(-1 != old_bottom->c_fn_frame->fn_index);
+      assert(stack->fn_status[old_bottom->c_fn_frame->fn_index] & ON_STACK);
+      stack->fn_status[old_bottom->c_fn_frame->fn_index] ^= ON_STACK;
+    }
   }
-  if (old_bottom->c_fn_frame->top_fn) {
-    iaddr_record_t* fn_record = get_iaddr_record_const(old_bottom->c_fn_frame->function, function_table);
-    assert(old_bottom->c_fn_frame->function == fn_record->iaddr);
-    fn_record->on_stack = false;
-  }
+
+  /* iaddr_record_t* cs_record = get_iaddr_record_const(old_bottom->c_fn_frame->rip, call_site_table); */
+  /* assert(old_bottom->c_fn_frame->rip == cs_record->iaddr); */
+  /* if (old_bottom->c_fn_frame->top_cs) { */
+  /*   cs_record->on_stack = false; */
+  /* } */
+  /* if (old_bottom->c_fn_frame->top_fn) { */
+  /*   iaddr_record_t* fn_record = get_iaddr_record_const(old_bottom->c_fn_frame->function, function_table); */
+  /*   assert(old_bottom->c_fn_frame->function == fn_record->iaddr); */
+  /*   fn_record->on_stack = false; */
+  /* } */
 
   /* InstanceType_t inst_type */
   /*     = (RECURSIVE & -((InstanceType_t)(cs_record->recursive))) */
@@ -1213,8 +1426,12 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
   /* InstanceType_t inst_type */
   /*     = (TOP & -((InstanceType_t)(stack->bot->c_fn_frame->top_fn))); */
 
+  /* FunctionType_t func_type =  */
+  /*     old_bottom->func_type | (IS_RECURSIVE & -((FunctionType_t)(cs_record->recursive))); */
+  uint32_t cs_index = old_bottom->c_fn_frame->cs_index;
   FunctionType_t func_type = 
-      old_bottom->func_type | (IS_RECURSIVE & -((FunctionType_t)(cs_record->recursive)));
+      old_bottom->func_type | (FunctionType_t)(stack->cs_status[cs_index] & RECURSIVE);
+  assert((stack->cs_status[cs_index] & RECURSIVE) || !(func_type & IS_RECURSIVE));
 
   stack->bot->c_fn_frame->running_wrk += old_bottom->c_fn_frame->running_wrk;
   
@@ -1226,7 +1443,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
                                       /* inst_type /\* | RECORD *\/, */
                                       stack->bot->c_fn_frame->top_fn,
                                       func_type,
-                                      cs_record->index,
+                                      cs_index,
 #ifndef NDEBUG
                                       old_bottom->c_fn_frame->rip,
 #endif
@@ -1240,7 +1457,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
                                       /* inst_type /\* | RECORD *\/, */
                                       stack->bot->c_fn_frame->top_fn,
                                       func_type,
-                                      cs_record->index,
+                                      cs_index,
 #ifndef NDEBUG
                                       old_bottom->c_fn_frame->rip,
 #endif
@@ -1254,7 +1471,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
     /* fprintf(stderr, "adding to wrk table\n"); */
     add_success = add_local_to_cc_hashtable(&(stack->wrk_table),
                                             func_type,
-                                            cs_record->index,
+                                            cs_index,
 #ifndef NDEBUG
                                             old_bottom->c_fn_frame->rip,
 #endif
@@ -1264,7 +1481,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
     /* fprintf(stderr, "adding to prefix table\n"); */
     add_success = add_local_to_cc_hashtable(&(old_bottom->prefix_table),
                                             func_type,
-                                            cs_record->index,
+                                            cs_index,
 #ifndef NDEBUG
                                             old_bottom->c_fn_frame->rip,
 #endif
