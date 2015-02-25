@@ -19,26 +19,29 @@ typedef struct {
   /* // Flag denoting whether this call site ever calls itself */
   /* bool is_recursive; */
 
+
+  // Store whether this entry is initialized
+  uint32_t initialized;
+
+#ifndef NDEBUG
   // Function type.  Least-significant bit indicates whether the
   // function is recursive.
   FunctionType_t func_type;
+  // Return address that identifies call site
+  uintptr_t rip;
+#endif
+
+  // Total number of invocations of rip.
+  uint32_t local_count;
+  // Local work associated with rip
+  uint64_t local_wrk;
+  // Local span associated with rip
+  uint64_t local_spn;
 
   // Number of invocations of rip, excluding recursive instances.
   uint32_t count;
   // Number of top-level invocations of rip.
   uint32_t top_count;
-  // Total number of invocations of rip.
-  uint32_t local_count;
-
-#ifndef NDEBUG
-  // Return address that identifies call site
-  uintptr_t rip;
-#endif
-
-  // Local work associated with rip
-  uint64_t local_wrk;
-  // Local span associated with rip
-  uint64_t local_spn;
 
   // Work associated with rip, excluding recursive instances
   uint64_t wrk;
@@ -97,22 +100,9 @@ bool empty_cc_entry_p(const cc_hashtable_entry_t *entry);
 cc_hashtable_t* cc_hashtable_create(void);
 void clear_cc_hashtable(cc_hashtable_t *tab);
 void flush_cc_hashtable(cc_hashtable_t **tab);
-/* cc_hashtable_entry_t* */
-/* get_cc_hashtable_entry_const(uintptr_t rip, cc_hashtable_t *tab); */
-/* bool add_to_cc_hashtable(cc_hashtable_t **tab, */
-/* 			 InstanceType_t inst_type, */
-/*                          FunctionType_t func_type, uintptr_t rip, */
-/* 			 uint64_t wrk, uint64_t spn, */
-/*                          uint64_t local_wrk, uint64_t local_spn); */
-/* bool add_local_to_cc_hashtable(cc_hashtable_t **tab, */
-/*                                /\* InstanceType_t inst_type, *\/ */
-/*                                FunctionType_t func_type, uintptr_t rip, */
-/*                                /\* uint64_t wrk, uint64_t spn, *\/ */
-/*                                uint64_t local_wrk, uint64_t local_spn); */
 bool add_to_cc_hashtable(cc_hashtable_t **tab,
                          /* InstanceType_t inst_type, */
                          bool is_top_fn,
-                         FunctionType_t func_type,
                          uint32_t index,
 #ifndef NDEBUG
                          uintptr_t rip,
@@ -120,7 +110,6 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
                          uint64_t wrk, uint64_t spn,
                          uint64_t local_wrk, uint64_t local_spn);
 bool add_local_to_cc_hashtable(cc_hashtable_t **tab,
-                               FunctionType_t func_type,
                                uint32_t index,
 #ifndef NDEBUG
                                uintptr_t rip,

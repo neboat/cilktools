@@ -17,7 +17,7 @@
 typedef struct iaddr_record_t {
   /* bool on_stack; */
   /* bool recursive; */
-  int index;
+  uint32_t index;
   FunctionType_t func_type;
   uintptr_t iaddr;
   struct iaddr_record_t *next;

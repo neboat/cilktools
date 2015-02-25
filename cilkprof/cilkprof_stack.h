@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <time.h>
+#include <limits.h>
 
 #ifndef COMPUTE_STRAND_DATA
 #define COMPUTE_STRAND_DATA 0
@@ -22,15 +23,18 @@
 // Used to size call site and function status vectors
 const int START_STATUS_VECTOR_SIZE = 4;
 
-typedef struct c_fn_frame_t {
-  // We don't have that many different flags yet,
-  // so we can just use bools.
-  bool top_cs;
-  bool top_fn;
+const int START_C_STACK_SIZE = 8;
+/* const int TOP_INDEX_FLAG = INT_MIN; */
 
-  // Indexes for this function
-  int cs_index;
-  int fn_index;
+typedef struct c_fn_frame_t {
+  /* // We don't have that many different flags yet, */
+  /* // so we can just use bools. */
+  /* bool top_cs; */
+  /* bool top_fn; */
+
+  // Index for this call site
+  uint32_t cs_index;
+  /* int fn_index; */
 
 #ifndef NDEBUG
   // Return address of this function
@@ -45,9 +49,9 @@ typedef struct c_fn_frame_t {
   uint64_t running_wrk;
   uint64_t running_spn;
 
-  // Parent of this C function on the same stack
-  struct c_fn_frame_t *parent;
-} c_fn_frame_t;
+  /* // Parent of this C function on the same stack */
+  /* struct c_fn_frame_t *parent; */
+} c_fn_frame_t __attribute__((aligned(16)));
 
 // Type for cilkprof stack frame
 typedef struct cilkprof_stack_frame_t {
@@ -59,6 +63,9 @@ typedef struct cilkprof_stack_frame_t {
   // Function type
   FunctionType_t func_type;
 
+  // Index of head C function in stack
+  uint32_t c_head;
+
   /* // Depth of the function */
   /* int32_t depth; */
   /* // Return address of this function */
@@ -66,18 +73,15 @@ typedef struct cilkprof_stack_frame_t {
   /* // Address of this function */
   /* uintptr_t function; */
 
-  // Pointer to the frame's parent
-  struct cilkprof_stack_frame_t *parent;
-
   /* // Running work of this function and its child C functions */
   /* uint64_t running_wrk; */
   /* // Span of the continuation of the function since the spawn of its */
   /* // longest child */
   /* uint64_t contin_spn; */
 
-  // Local work and span of this function and its child C functions.  These
-  // work and span values are maintained as a stack.
-  c_fn_frame_t *c_fn_frame;
+  /* // Local work and span of this function and its child C functions.  These */
+  /* // work and span values are maintained as a stack. */
+  /* c_fn_frame_t *c_fn_frame; */
 
   /* // Local work of this function */
   /* uint64_t local_wrk; */
@@ -117,17 +121,30 @@ typedef struct cilkprof_stack_frame_t {
   // Strand data associated with continuation
   strand_hashtable_t* strand_contin_table;
 #endif
+
+  // Pointer to the frame's parent
+  struct cilkprof_stack_frame_t *parent;
 } cilkprof_stack_frame_t;
 
 
-// Status flags for a call site or function
-typedef uint32_t iaddr_status_t;
-const iaddr_status_t EMPTY_STATUS = 0;
-// We use the IS_RECURSIVE FunctionType_t, which is represented as
-// 0x1, as an iaddr_status_t flag.  The other flags are chosen to
-// accomodate this.
-const iaddr_status_t RECURSIVE = (iaddr_status_t)IS_RECURSIVE;
-const iaddr_status_t ON_STACK = 0x2;
+// Metadata for a call site
+typedef struct {
+  /* uint32_t count_on_stack; */
+  /* FunctionType_t func_type; */
+  int32_t c_tail;
+  int32_t fn_index;
+} cs_status_t;
+
+// Use sign bit of c_fn_index to denote recursive functions
+const int32_t RECURSIVE = INT32_MIN;
+// c_tail == INT32_MAX for cs not on stack
+const int32_t OFF_STACK = INT32_MAX;
+// fn_index == -1 for uninitialized cs
+const int32_t UNINITIALIZED = -1;
+
+// Metadata for a function
+typedef int32_t fn_status_t;
+const int32_t FN_OFF_STACK = -1;
 
 // Type for a cilkprof stack
 typedef struct {
@@ -141,19 +158,22 @@ typedef struct {
   // Capacity of function status vector
   int fn_status_capacity;
 
-#if COMPUTE_STRAND_DATA
-  // Endpoints of currently executing strand
-  uintptr_t strand_start;
-  uintptr_t strand_end;
-#endif
+  // Capacity of C stack
+  int c_stack_capacity;
+
+  // Current bottom of C stack
+  uint32_t c_tail;
 
   // Tool for measuring the length of a strand
   strand_ruler_t strand_ruler;
 
+  // Stack of C function frames
+  c_fn_frame_t *c_stack;
+
   // Vector of status flags for different call sites
-  iaddr_status_t *cs_status;
+  cs_status_t *cs_status;
   // Vector of status flags for different functions
-  iaddr_status_t *fn_status;
+  fn_status_t *fn_status;
 
   // Pointer to bottom of the stack, onto which frames are pushed.
   cilkprof_stack_frame_t *bot;
@@ -161,12 +181,16 @@ typedef struct {
   // Call-site data associated with the running work
   cc_hashtable_t* wrk_table;
 #if COMPUTE_STRAND_DATA
+  // Endpoints of currently executing strand
+  uintptr_t strand_start;
+  uintptr_t strand_end;
+
   // Strand data associated with running work
   strand_hashtable_t* strand_wrk_table;
 #endif
 
-  // Free list of C function frames
-  c_fn_frame_t *c_fn_free_list;
+  /* // Free list of C function frames */
+  /* c_fn_frame_t *c_fn_free_list; */
 
   // Free list of cilkprof stack frames
   cilkprof_stack_frame_t *sf_free_list;
@@ -175,14 +199,29 @@ typedef struct {
 
 /*----------------------------------------------------------------------*/
 
+// Resizes the C stack
+__attribute__((always_inline))
+void resize_c_stack(c_fn_frame_t **c_stack, int *c_stack_capacity) {
+  int new_c_stack_capacity = 2 * (*c_stack_capacity);
+  c_fn_frame_t *new_c_stack = (c_fn_frame_t*)malloc(sizeof(c_fn_frame_t)
+                                                    * new_c_stack_capacity);
+  for (int i = 0; i < *c_stack_capacity; ++i) {
+    new_c_stack[i] = (*c_stack)[i];
+  }
+
+  free(*c_stack);
+  *c_stack = new_c_stack;
+  *c_stack_capacity = new_c_stack_capacity;
+}
+
 // Initializes C function frame *c_fn_frame
 static inline
 void cilkprof_c_fn_frame_init(c_fn_frame_t *c_fn_frame) {
-  c_fn_frame->top_cs = false;
-  c_fn_frame->top_fn = false;
+  /* c_fn_frame->top_cs = false; */
+  /* c_fn_frame->top_fn = false; */
 
-  c_fn_frame->cs_index = -1;
-  c_fn_frame->fn_index = -1;
+  c_fn_frame->cs_index = 0;
+  /* c_fn_frame->fn_index = 0; */
 
 #ifndef NDEBUG
   c_fn_frame->rip = (uintptr_t)NULL;
@@ -194,18 +233,21 @@ void cilkprof_c_fn_frame_init(c_fn_frame_t *c_fn_frame) {
   c_fn_frame->running_wrk = 0;
   c_fn_frame->running_spn = 0;
 
-  c_fn_frame->parent = NULL;
+  /* c_fn_frame->parent = NULL; */
 }
 
 // Initializes the cilkprof stack frame *frame
 static inline
-void cilkprof_stack_frame_init(cilkprof_stack_frame_t *frame, FunctionType_t func_type)
+void cilkprof_stack_frame_init(cilkprof_stack_frame_t *frame,
+                               FunctionType_t func_type,
+                               int c_head)
 {
   frame->parent = NULL;
 
   frame->func_type = func_type;
 
-  cilkprof_c_fn_frame_init(frame->c_fn_frame);
+  /* cilkprof_c_fn_frame_init(frame->c_fn_frame); */
+  frame->c_head = c_head;
 
   /* frame->top_cs = false; */
   /* frame->top_fn = false; */
@@ -254,27 +296,39 @@ void cilkprof_stack_frame_init(cilkprof_stack_frame_t *frame, FunctionType_t fun
 // stack->bot->c_fn_frame.
 c_fn_frame_t* cilkprof_c_fn_push(cilkprof_stack_t *stack)
 {
+  /* fprintf(stderr, "pushing C stack\n"); */
   assert(NULL != stack->bot);
-  assert(NULL != stack->bot->c_fn_frame);
 
-  c_fn_frame_t *new_frame;
-  if (NULL != stack->c_fn_free_list) {
-    new_frame = stack->c_fn_free_list;
-    stack->c_fn_free_list = stack->c_fn_free_list->parent;
-  } else {
-    new_frame = (c_fn_frame_t *)malloc(sizeof(c_fn_frame_t));
+  ++stack->c_tail;
+
+  if (stack->c_tail >= stack->c_stack_capacity) {
+    resize_c_stack(&(stack->c_stack), &(stack->c_stack_capacity));
   }
 
-  cilkprof_c_fn_frame_init(new_frame);
-  new_frame->parent = stack->bot->c_fn_frame;
-  stack->bot->c_fn_frame = new_frame;
+  cilkprof_c_fn_frame_init(&(stack->c_stack[stack->c_tail]));
 
-  return new_frame;
+  /* assert(NULL != stack->bot->c_fn_frame); */
+
+  /* c_fn_frame_t *new_frame; */
+  /* if (NULL != stack->c_fn_free_list) { */
+  /*   new_frame = stack->c_fn_free_list; */
+  /*   stack->c_fn_free_list = stack->c_fn_free_list->parent; */
+  /* } else { */
+  /*   new_frame = (c_fn_frame_t *)malloc(sizeof(c_fn_frame_t)); */
+  /* } */
+
+  /* cilkprof_c_fn_frame_init(new_frame); */
+  /* new_frame->parent = stack->bot->c_fn_frame; */
+  /* stack->bot->c_fn_frame = new_frame; */
+
+  return &(stack->c_stack[stack->c_tail]);
 }
 
 
 // Push new frame of function type func_type onto the stack *stack
-cilkprof_stack_frame_t* cilkprof_stack_push(cilkprof_stack_t *stack, FunctionType_t func_type)
+__attribute__((always_inline))
+cilkprof_stack_frame_t*
+cilkprof_stack_push(cilkprof_stack_t *stack, FunctionType_t func_type)
 {
   cilkprof_stack_frame_t *new_frame;
   if (NULL != stack->sf_free_list) {
@@ -283,14 +337,14 @@ cilkprof_stack_frame_t* cilkprof_stack_push(cilkprof_stack_t *stack, FunctionTyp
   } else {
     new_frame = (cilkprof_stack_frame_t *)malloc(sizeof(cilkprof_stack_frame_t));
 
-    c_fn_frame_t *new_c_frame;
-    if (NULL != stack->c_fn_free_list) {
-      new_c_frame = stack->c_fn_free_list;
-      stack->c_fn_free_list = stack->c_fn_free_list->parent;
-    } else {
-      new_c_frame = (c_fn_frame_t *)malloc(sizeof(c_fn_frame_t));
-    }
-    new_frame->c_fn_frame = new_c_frame;
+    /* c_fn_frame_t *new_c_frame; */
+    /* if (NULL != stack->c_fn_free_list) { */
+    /*   new_c_frame = stack->c_fn_free_list; */
+    /*   stack->c_fn_free_list = stack->c_fn_free_list->parent; */
+    /* } else { */
+    /*   new_c_frame = (c_fn_frame_t *)malloc(sizeof(c_fn_frame_t)); */
+    /* } */
+    /* new_frame->c_fn_frame = new_c_frame; */
 
     new_frame->prefix_table = cc_hashtable_create();
 #if COMPUTE_STRAND_DATA
@@ -305,13 +359,14 @@ cilkprof_stack_frame_t* cilkprof_stack_push(cilkprof_stack_t *stack, FunctionTyp
     new_frame->strand_contin_table = strand_hashtable_create();
 #endif
   }
-  
-  cilkprof_stack_frame_init(new_frame, func_type);
+
+  cilkprof_c_fn_push(stack);
+  cilkprof_stack_frame_init(new_frame, func_type, stack->c_tail);
   new_frame->parent = stack->bot;
   stack->bot = new_frame;
-  if (new_frame->parent) {
-    /* new_frame->depth = new_frame->parent->depth + 1; */
-  }
+  /* if (new_frame->parent) { */
+  /*   new_frame->depth = new_frame->parent->depth + 1; */
+  /* } */
 
   return new_frame;
 }
@@ -323,9 +378,31 @@ void cilkprof_stack_init(cilkprof_stack_t *stack, FunctionType_t func_type)
   stack->in_user_code = false;
   stack->bot = NULL;
   stack->sf_free_list = NULL;
-  stack->c_fn_free_list = NULL;
+  /* stack->c_fn_free_list = NULL; */
 
-  cilkprof_stack_push(stack, func_type);
+  stack->c_stack = (c_fn_frame_t*)malloc(sizeof(c_fn_frame_t) * START_C_STACK_SIZE);
+  stack->c_stack_capacity = START_C_STACK_SIZE;
+  stack->c_tail = 0;
+
+  cilkprof_stack_frame_t *new_frame = (cilkprof_stack_frame_t *)malloc(sizeof(cilkprof_stack_frame_t));
+
+  new_frame->prefix_table = cc_hashtable_create();
+#if COMPUTE_STRAND_DATA
+  new_frame->strand_prefix_table = strand_hashtable_create();
+#endif
+  new_frame->lchild_table = cc_hashtable_create();
+#if COMPUTE_STRAND_DATA
+  new_frame->strand_lchild_table = strand_hashtable_create();
+#endif
+  new_frame->contin_table = cc_hashtable_create();
+#if COMPUTE_STRAND_DATA
+  new_frame->strand_contin_table = strand_hashtable_create();
+#endif
+
+  cilkprof_stack_frame_init(new_frame, func_type, 0);
+  cilkprof_c_fn_frame_init(&(stack->c_stack[0]));
+
+  stack->bot = new_frame;
 
   stack->wrk_table = cc_hashtable_create();
 #if COMPUTE_STRAND_DATA
@@ -335,32 +412,56 @@ void cilkprof_stack_init(cilkprof_stack_t *stack, FunctionType_t func_type)
   stack->cs_status_capacity = START_STATUS_VECTOR_SIZE;
   stack->fn_status_capacity = START_STATUS_VECTOR_SIZE;
 
-  stack->cs_status = (iaddr_status_t*)malloc(sizeof(iaddr_status_t)
-                                             * START_STATUS_VECTOR_SIZE);
+  stack->cs_status = (cs_status_t*)malloc(sizeof(cs_status_t)
+                                          * START_STATUS_VECTOR_SIZE);
 
-  stack->fn_status = (iaddr_status_t*)malloc(sizeof(iaddr_status_t)
-                                             * START_STATUS_VECTOR_SIZE);
+  stack->fn_status = (fn_status_t*)malloc(sizeof(fn_status_t)
+                                          * START_STATUS_VECTOR_SIZE);
 
   for (int i = 0; i < START_STATUS_VECTOR_SIZE; ++i) {
-    stack->cs_status[i] = EMPTY_STATUS;
-    stack->fn_status[i] = EMPTY_STATUS;
+    /* stack->cs_status[i].count_on_stack = 0; */
+    /* stack->cs_status[i].func_type = EMPTY; */
+    stack->cs_status[i].c_tail = OFF_STACK;
+    stack->cs_status[i].fn_index = UNINITIALIZED;
+    stack->fn_status[i] = FN_OFF_STACK;
   }
 
   init_strand_ruler(&(stack->strand_ruler));
 }
 
-// Doubles the capacity of a status vector
-void resize_status_vector(iaddr_status_t **old_status_vec,
-                          int *old_vec_capacity) {
+// Doubles the capacity of a cs status vector
+void resize_cs_status_vector(cs_status_t **old_status_vec,
+                             int *old_vec_capacity) {
   int new_vec_capacity = *old_vec_capacity * 2;
-  iaddr_status_t *new_status_vec = (iaddr_status_t*)malloc(sizeof(iaddr_status_t)
-                                                           * new_vec_capacity);
+  cs_status_t *new_status_vec = (cs_status_t*)malloc(sizeof(cs_status_t)
+                                                     * new_vec_capacity);
   int i;
   for (i = 0; i < *old_vec_capacity; ++i) {
     new_status_vec[i] = (*old_status_vec)[i];
   }
   for ( ; i < new_vec_capacity; ++i) {
-    new_status_vec[i] = EMPTY_STATUS;
+    /* new_status_vec[i].count_on_stack = 0; */
+    new_status_vec[i].c_tail = OFF_STACK;
+    new_status_vec[i].fn_index = UNINITIALIZED;
+  }
+
+  free(*old_status_vec);
+  *old_status_vec = new_status_vec;
+  *old_vec_capacity = new_vec_capacity;
+}
+
+// Doubles the capacity of a fn status vector
+void resize_fn_status_vector(fn_status_t **old_status_vec,
+                             int *old_vec_capacity) {
+  int new_vec_capacity = *old_vec_capacity * 2;
+  fn_status_t *new_status_vec = (fn_status_t*)malloc(sizeof(fn_status_t)
+                                                     * new_vec_capacity);
+  int i;
+  for (i = 0; i < *old_vec_capacity; ++i) {
+    new_status_vec[i] = (*old_status_vec)[i];
+  }
+  for ( ; i < new_vec_capacity; ++i) {
+    new_status_vec[i] = FN_OFF_STACK;
   }
 
   free(*old_status_vec);
@@ -372,9 +473,12 @@ void resize_status_vector(iaddr_status_t **old_status_vec,
 // stack->bot->c_fn_frame, and returns a pointer to it.
 c_fn_frame_t* cilkprof_c_fn_pop(cilkprof_stack_t *stack)
 {
-  c_fn_frame_t *old_c_bot = stack->bot->c_fn_frame;
-  stack->bot->c_fn_frame = stack->bot->c_fn_frame->parent;
-  assert(NULL != stack->bot->c_fn_frame);
+  /* fprintf(stderr, "poping C stack\n"); */
+  c_fn_frame_t *old_c_bot = &(stack->c_stack[stack->c_tail]);
+  --stack->c_tail;
+  assert(stack->c_tail >= stack->bot->c_head);
+  /* stack->bot->c_fn_frame = stack->bot->c_fn_frame->parent; */
+  /* assert(NULL != stack->bot->c_fn_frame); */
   return old_c_bot;
 }
 
@@ -385,6 +489,7 @@ cilkprof_stack_frame_t* cilkprof_stack_pop(cilkprof_stack_t *stack)
 {
   cilkprof_stack_frame_t *old_bottom = stack->bot;
   stack->bot = stack->bot->parent;
+  cilkprof_c_fn_pop(stack);
   // if (stack->bot && stack->bot->height < old_bottom->height + 1) {
   //  stack->bot->height = old_bottom->height + 1;
   // }

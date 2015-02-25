@@ -3,6 +3,7 @@
 
 #include <inttypes.h>
 #include <execinfo.h>
+#include <limits.h>
 
 // Types of functions
 typedef enum {

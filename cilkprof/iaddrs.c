@@ -14,19 +14,12 @@
 #define IADDR_CACHE 0
 #endif
 
-/* static int min(int a, int b) { */
-/*   return a < b ? a : b; */
-/* } */
-
 /**
  * Method implementations
  */
 // Starting capacity of the hash table is 2^4 entries.
 static const int START_LG_CAPACITY = 4;
 
-// Torlate entries being displaced by a constant amount
-/* static const size_t MAX_DISPLACEMENT = 64 / sizeof(iaddr_record_t); */
-/* static const size_t MAX_DISPLACEMENT = 16; */
 #if IADDR_CACHE
 static const int IADDR_CACHE_SIZE = 8;
 #endif
@@ -78,7 +71,6 @@ static iaddr_table_t* iaddr_table_alloc(int lg_capacity) {
   table->iaddr_cache = NULL;
 #endif
   for (size_t i = 0; i < capacity; ++i) {
-    /* make_empty_iaddr_record(&(table->records[i])); */
     table->records[i] = NULL;
   }
 
@@ -148,14 +140,14 @@ get_iaddr_record_const(uintptr_t iaddr, FunctionType_t func_type, iaddr_table_t 
   if (NULL == record)
     return record;
 
-  if (iaddr == record->iaddr && func_type == record->func_type)
+  if ((iaddr == record->iaddr) & (func_type == record->func_type))
     return record;
 
   do {
     last_record = record;
     record = record->next;
-  } while (NULL != record &&
-           (iaddr != record->iaddr || func_type != record->func_type));
+  } while (NULL != record && 
+           ((iaddr != record->iaddr) | (func_type != record->func_type)));
 
   if (NULL == record)
     return record;
@@ -231,7 +223,6 @@ get_iaddr_record(uintptr_t iaddr, FunctionType_t func_type, iaddr_table_t **tab)
     iaddr_record_t **first_record = &((*tab)->records[hash(iaddr, (*tab)->lg_capacity)]);
     // Allocate a new record
     record = (iaddr_record_t*)malloc(sizeof(iaddr_record_t));
-    /* make_empty_iaddr_record(record); */
     record->iaddr = iaddr;
     record->func_type = func_type;
     record->index = (*tab)->table_size++;
