@@ -17,7 +17,7 @@
 typedef struct iaddr_record_t {
   /* bool on_stack; */
   /* bool recursive; */
-  uint32_t index;
+  int32_t index;
   FunctionType_t func_type;
   uintptr_t iaddr;
   struct iaddr_record_t *next;
@@ -45,7 +45,7 @@ typedef struct {
 iaddr_table_t* iaddr_table_create(void);
 iaddr_record_t*
 get_iaddr_record_const(uintptr_t iaddr, FunctionType_t func_type, iaddr_table_t *tab);
-int add_to_iaddr_table(iaddr_table_t **tab, uintptr_t iaddr, FunctionType_t func_type);
+int32_t add_to_iaddr_table(iaddr_table_t **tab, uintptr_t iaddr, FunctionType_t func_type);
 void iaddr_table_free(iaddr_table_t *tab);
 
 #endif

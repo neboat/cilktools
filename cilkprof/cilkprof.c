@@ -390,7 +390,7 @@ void cilk_tool_print(void) {
       /* if (entry->func_type & IS_RECURSIVE) {  // recursive function */
       /* FunctionType_t func_type = (stack->cs_status[record->index].func_type & ~ON_STACK); */
       FunctionType_t func_type = record->func_type;
-      if (stack->cs_status[record->index].c_tail & RECURSIVE) {  // recursive function
+      if (stack->cs_status[record->index].flags & RECURSIVE) {  // recursive function
         fprintf(fout, "%s %s, ",
                 FunctionType_str[func_type],
                 FunctionType_str[IS_RECURSIVE]);
@@ -567,17 +567,18 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* this_fn, void* rip)
   uintptr_t cs = (uintptr_t)__builtin_extract_return_addr(rip);
   uintptr_t fn = (uintptr_t)this_fn;
 
-  int cs_index = add_to_iaddr_table(&call_site_table, cs, SPAWNER);
+  int32_t cs_index = add_to_iaddr_table(&call_site_table, cs, SPAWNER);
   c_bottom->cs_index = cs_index;
   if (cs_index >= stack->cs_status_capacity) {
     resize_cs_status_vector(&(stack->cs_status), &(stack->cs_status_capacity));
   }
-  if (OFF_STACK != (stack->cs_status[cs_index].c_tail & ~RECURSIVE)) {
-    if (!(stack->cs_status[cs_index].c_tail & RECURSIVE)) {
-      stack->cs_status[cs_index].c_tail |= RECURSIVE;
+  int32_t cs_tail = stack->cs_status[cs_index].c_tail;
+  if (OFF_STACK != cs_tail) {
+    if (!(stack->cs_status[cs_index].flags & RECURSIVE)) {
+      stack->cs_status[cs_index].flags |= RECURSIVE;
     }
   } else {
-    int fn_index;
+    int32_t fn_index;
     if (UNINITIALIZED == stack->cs_status[cs_index].fn_index) {
 
       assert(call_site_table->table_size == cs_index + 1);
@@ -591,8 +592,8 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* this_fn, void* rip)
     } else {
       fn_index = stack->cs_status[cs_index].fn_index;
     }
-    stack->cs_status[cs_index].c_tail = stack->c_tail | (RECURSIVE & stack->cs_status[cs_index].c_tail);
-    if (FN_OFF_STACK == stack->fn_status[fn_index]) {
+    stack->cs_status[cs_index].c_tail = stack->c_tail;
+    if (OFF_STACK == stack->fn_status[fn_index]) {
       stack->fn_status[fn_index] = stack->c_tail;
     }
   }
@@ -635,17 +636,18 @@ void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *this_fn, void *rip
   uintptr_t cs = (uintptr_t)__builtin_extract_return_addr(rip);
   uintptr_t fn = (uintptr_t)this_fn;
 
-  int cs_index = add_to_iaddr_table(&call_site_table, cs, HELPER);
+  int32_t cs_index = add_to_iaddr_table(&call_site_table, cs, HELPER);
   c_bottom->cs_index = cs_index;
   if (cs_index >= stack->cs_status_capacity) {
     resize_cs_status_vector(&(stack->cs_status), &(stack->cs_status_capacity));
   }
-  if (OFF_STACK != (stack->cs_status[cs_index].c_tail & ~RECURSIVE)) {
-    if (!(stack->cs_status[cs_index].c_tail & RECURSIVE)) {
-      stack->cs_status[cs_index].c_tail |= RECURSIVE;
+  int32_t cs_tail = stack->cs_status[cs_index].c_tail;
+  if (OFF_STACK != cs_tail) {
+    if (!(stack->cs_status[cs_index].flags & RECURSIVE)) {
+      stack->cs_status[cs_index].flags |= RECURSIVE;
     }
   } else {
-    int fn_index;
+    int32_t fn_index;
     if (UNINITIALIZED == stack->cs_status[cs_index].fn_index) {
 
       assert(call_site_table->table_size == cs_index + 1);
@@ -659,9 +661,8 @@ void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *this_fn, void *rip
     } else {
       fn_index = stack->cs_status[cs_index].fn_index;
     }
-    /* c_bottom->cs_index |= TOP_INST; */
-    stack->cs_status[cs_index].c_tail = stack->c_tail | (RECURSIVE & stack->cs_status[cs_index].c_tail);
-    if (FN_OFF_STACK == stack->fn_status[fn_index]) {
+    stack->cs_status[cs_index].c_tail = stack->c_tail;
+    if (OFF_STACK == stack->fn_status[fn_index]) {
       stack->fn_status[fn_index] = stack->c_tail;
     }
   }
@@ -710,7 +711,7 @@ void cilk_tool_c_function_enter(void *this_fn, void *rip)
     uintptr_t cs = (uintptr_t)__builtin_extract_return_addr(rip);
     uintptr_t fn = (uintptr_t)this_fn;
 
-    int cs_index = add_to_iaddr_table(&call_site_table, cs, MAIN);
+    int32_t cs_index = add_to_iaddr_table(&call_site_table, cs, MAIN);
     c_bottom->cs_index = cs_index;
     if (cs_index >= stack->cs_status_capacity) {
       resize_cs_status_vector(&(stack->cs_status), &(stack->cs_status_capacity));
@@ -719,13 +720,13 @@ void cilk_tool_c_function_enter(void *this_fn, void *rip)
     assert(call_site_table->table_size == cs_index + 1);
     MIN_CAPACITY = cs_index + 1;
 
-    int fn_index = add_to_iaddr_table(&function_table, fn, MAIN);
+    int32_t fn_index = add_to_iaddr_table(&function_table, fn, MAIN);
     stack->cs_status[cs_index].fn_index = fn_index;
     /* c_bottom->fn_index = fn_index; */
     if (fn_index >= stack->fn_status_capacity) {
       resize_fn_status_vector(&(stack->fn_status), &(stack->fn_status_capacity));
     }
-    assert(FN_OFF_STACK == stack->fn_status[fn_index]);
+    assert(OFF_STACK == stack->fn_status[fn_index]);
     stack->fn_status[fn_index] = stack->c_tail;
 
 #ifndef NDEBUG
@@ -760,17 +761,18 @@ void cilk_tool_c_function_enter(void *this_fn, void *rip)
     uintptr_t cs = (uintptr_t)__builtin_extract_return_addr(rip);
     uintptr_t fn = (uintptr_t)this_fn;
 
-    int cs_index = add_to_iaddr_table(&call_site_table, cs, C_FUNCTION);
+    int32_t cs_index = add_to_iaddr_table(&call_site_table, cs, C_FUNCTION);
     c_bottom->cs_index = cs_index;
     if (cs_index >= stack->cs_status_capacity) {
       resize_cs_status_vector(&(stack->cs_status), &(stack->cs_status_capacity));
     }
-    if (OFF_STACK != (stack->cs_status[cs_index].c_tail & ~RECURSIVE)) {
-      if (!(stack->cs_status[cs_index].c_tail & RECURSIVE)) {
-        stack->cs_status[cs_index].c_tail |= RECURSIVE;
+    int32_t cs_tail = stack->cs_status[cs_index].c_tail;
+    if (OFF_STACK != cs_tail) {
+      if (!(stack->cs_status[cs_index].flags & RECURSIVE)) {
+        stack->cs_status[cs_index].flags |= RECURSIVE;
       }
     } else {
-      int fn_index;
+      int32_t fn_index;
       if (UNINITIALIZED == stack->cs_status[cs_index].fn_index) {
 
         assert(call_site_table->table_size == cs_index + 1);
@@ -784,8 +786,8 @@ void cilk_tool_c_function_enter(void *this_fn, void *rip)
       } else {
         fn_index = stack->cs_status[cs_index].fn_index;
       }
-      stack->cs_status[cs_index].c_tail = stack->c_tail | (RECURSIVE & stack->cs_status[cs_index].c_tail);
-      if (FN_OFF_STACK == stack->fn_status[fn_index]) {
+      stack->cs_status[cs_index].c_tail = stack->c_tail;
+      if (OFF_STACK == stack->fn_status[fn_index]) {
         stack->fn_status[fn_index] = stack->c_tail;
       }
     }
@@ -820,14 +822,15 @@ void cilk_tool_c_function_leave(void *rip)
       MAIN == stack->bot->func_type &&
       stack->c_tail == stack->bot->c_head) {
 
-    int cs_index = c_bottom->cs_index;
-    int top_cs = ((stack->cs_status[cs_index].c_tail & ~RECURSIVE) == stack->c_tail);
+    int32_t cs_index = c_bottom->cs_index;
+    int32_t cs_tail = stack->cs_status[cs_index].c_tail;
+    bool top_cs = (cs_tail == stack->c_tail);
 
     if (top_cs) {
-      stack->cs_status[cs_index].c_tail = OFF_STACK | (RECURSIVE & stack->cs_status[cs_index].c_tail);
-      int fn_index = stack->cs_status[cs_index].fn_index;
+      stack->cs_status[cs_index].c_tail = OFF_STACK;
+      int32_t fn_index = stack->cs_status[cs_index].fn_index;
       if (stack->fn_status[fn_index] == stack->c_tail) {
-        stack->fn_status[fn_index] = FN_OFF_STACK;
+        stack->fn_status[fn_index] = OFF_STACK;
       }
     }
 
@@ -873,15 +876,16 @@ void cilk_tool_c_function_leave(void *rip)
   uint64_t running_wrk = old_bottom->running_wrk + local_wrk;
   uint64_t running_spn = old_bottom->running_spn + local_wrk;
 
-  int cs_index = old_bottom->cs_index;
-  uint32_t top_cs = ((stack->cs_status[cs_index].c_tail & ~RECURSIVE) == stack->c_tail + 1);
+  int32_t cs_index = old_bottom->cs_index;
+  int32_t cs_tail = stack->cs_status[cs_index].c_tail;
+  bool top_cs = (cs_tail == stack->c_tail + 1);
 
   /* fprintf(stderr, "cs_index = %d\n", cs_index); */
   if (top_cs) {  // top CS instance
-    stack->cs_status[cs_index].c_tail = OFF_STACK | (RECURSIVE & stack->cs_status[cs_index].c_tail);
-    int fn_index = stack->cs_status[cs_index].fn_index;
+    stack->cs_status[cs_index].c_tail = OFF_STACK;
+    int32_t fn_index = stack->cs_status[cs_index].fn_index;
     if (stack->fn_status[fn_index] == stack->c_tail + 1) {
-      stack->fn_status[fn_index] = FN_OFF_STACK;
+      stack->fn_status[fn_index] = OFF_STACK;
     }
   }
 
@@ -894,16 +898,9 @@ void cilk_tool_c_function_leave(void *rip)
   /* assert(old_bottom->top_cs || !stack->bot->top_fn); */
   // Update work table
   if (top_cs) {
-    /* if (stack->cs_status[new_bottom->cs_index].fn_index != new_bottom->fn_index) { */
-    /*   fprintf(stderr, "stack->cs_status fn_index %d, new_bottom->fn_index %d\n", */
-    /*           stack->cs_status[new_bottom->cs_index].fn_index, new_bottom->fn_index); */
-    /* } */
-    /* assert(stack->cs_status[new_bottom->cs_index].fn_index == new_bottom->fn_index); */
-    int fn_index = stack->cs_status[new_bottom->cs_index].fn_index;
+    uint32_t fn_index = stack->cs_status[new_bottom->cs_index].fn_index;
     /* fprintf(stderr, "adding to wrk table\n"); */
     add_success = add_to_cc_hashtable(&(stack->wrk_table),
-                                      /* inst_type /\* | RECORD *\/, */
-                                      /* new_bottom->fn_index & TOP_INDEX_FLAG, */
                                       stack->c_tail == stack->fn_status[fn_index],
                                       cs_index,
 #ifndef NDEBUG
@@ -916,8 +913,6 @@ void cilk_tool_c_function_leave(void *rip)
     assert(add_success);
     /* fprintf(stderr, "adding to prefix table\n"); */
     add_success = add_to_cc_hashtable(&(stack->bot->contin_table),
-                                      /* inst_type /\* | RECORD *\/, */
-                                      /* new_bottom->fn_index & TOP_INDEX_FLAG, */
                                       stack->c_tail == stack->fn_status[fn_index],
                                       cs_index,
 #ifndef NDEBUG
@@ -1209,14 +1204,15 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 
   c_fn_frame_t *c_bottom = &(stack->c_stack[stack->c_tail]);
 
-  int cs_index = old_c_bottom->cs_index;
-  int top_cs = ((stack->cs_status[cs_index].c_tail & ~RECURSIVE) == stack->c_tail + 1);
+  int32_t cs_index = old_c_bottom->cs_index;
+  int32_t cs_tail = stack->cs_status[cs_index].c_tail;
+  bool top_cs = (cs_tail == stack->c_tail + 1);
 
   if (top_cs) {  // top CS instance
-    stack->cs_status[cs_index].c_tail = OFF_STACK | (RECURSIVE & stack->cs_status[cs_index].c_tail);
-    int fn_index = stack->cs_status[cs_index].fn_index;
+    stack->cs_status[cs_index].c_tail = OFF_STACK;
+    int32_t fn_index = stack->cs_status[cs_index].fn_index;
     if (stack->fn_status[fn_index] == stack->c_tail + 1) {
-      stack->fn_status[fn_index] = FN_OFF_STACK;
+      stack->fn_status[fn_index] = OFF_STACK;
     }
   }
 
@@ -1225,7 +1221,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
   // Update work table
   if (top_cs) {
     /* assert(stack->cs_status[c_bottom->cs_index].fn_index == c_bottom->fn_index); */
-    int fn_index = stack->cs_status[c_bottom->cs_index].fn_index;
+    int32_t fn_index = stack->cs_status[c_bottom->cs_index].fn_index;
     /* fprintf(stderr, "adding to wrk table\n"); */
     add_success = add_to_cc_hashtable(&(stack->wrk_table),
                                       stack->c_tail == stack->fn_status[fn_index],

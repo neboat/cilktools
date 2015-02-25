@@ -33,7 +33,7 @@ typedef struct c_fn_frame_t {
   /* bool top_fn; */
 
   // Index for this call site
-  uint32_t cs_index;
+  int32_t cs_index;
   /* int fn_index; */
 
 #ifndef NDEBUG
@@ -64,7 +64,7 @@ typedef struct cilkprof_stack_frame_t {
   FunctionType_t func_type;
 
   // Index of head C function in stack
-  uint32_t c_head;
+  int32_t c_head;
 
   /* // Depth of the function */
   /* int32_t depth; */
@@ -133,18 +133,15 @@ typedef struct {
   /* FunctionType_t func_type; */
   int32_t c_tail;
   int32_t fn_index;
+  uint32_t flags;
 } cs_status_t;
-
-// Use sign bit of c_fn_index to denote recursive functions
-const int32_t RECURSIVE = INT32_MIN;
-// c_tail == INT32_MAX for cs not on stack
-const int32_t OFF_STACK = INT32_MAX;
-// fn_index == -1 for uninitialized cs
-const int32_t UNINITIALIZED = -1;
 
 // Metadata for a function
 typedef int32_t fn_status_t;
-const int32_t FN_OFF_STACK = -1;
+
+const uint32_t RECURSIVE = 1;
+const int32_t OFF_STACK = INT32_MIN;
+const int32_t UNINITIALIZED = INT32_MIN;
 
 // Type for a cilkprof stack
 typedef struct {
@@ -162,7 +159,7 @@ typedef struct {
   int c_stack_capacity;
 
   // Current bottom of C stack
-  uint32_t c_tail;
+  int32_t c_tail;
 
   // Tool for measuring the length of a strand
   strand_ruler_t strand_ruler;
@@ -423,7 +420,8 @@ void cilkprof_stack_init(cilkprof_stack_t *stack, FunctionType_t func_type)
     /* stack->cs_status[i].func_type = EMPTY; */
     stack->cs_status[i].c_tail = OFF_STACK;
     stack->cs_status[i].fn_index = UNINITIALIZED;
-    stack->fn_status[i] = FN_OFF_STACK;
+    stack->cs_status[i].flags = 0;
+    stack->fn_status[i] = OFF_STACK;
   }
 
   init_strand_ruler(&(stack->strand_ruler));
@@ -443,6 +441,7 @@ void resize_cs_status_vector(cs_status_t **old_status_vec,
     /* new_status_vec[i].count_on_stack = 0; */
     new_status_vec[i].c_tail = OFF_STACK;
     new_status_vec[i].fn_index = UNINITIALIZED;
+    new_status_vec[i].flags = 0;
   }
 
   free(*old_status_vec);
@@ -461,7 +460,7 @@ void resize_fn_status_vector(fn_status_t **old_status_vec,
     new_status_vec[i] = (*old_status_vec)[i];
   }
   for ( ; i < new_vec_capacity; ++i) {
-    new_status_vec[i] = FN_OFF_STACK;
+    new_status_vec[i] = OFF_STACK;
   }
 
   free(*old_status_vec);

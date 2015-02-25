@@ -112,7 +112,8 @@ get_iaddr_record_const(uintptr_t iaddr, FunctionType_t func_type, iaddr_table_t 
   iaddr_cache_el_t *cache_el = tab->iaddr_cache;
   iaddr_cache_el_t *last_cache_el = NULL;
   while (NULL != cache_el->record) {
-    if (iaddr == cache_el->record->iaddr) {
+    if ((iaddr == cache_el->record->iaddr) &
+        (func_type == cache_el->record->func_type)) {
       // Move record to front of cache
       if (NULL != last_cache_el) {
         last_cache_el->next = cache_el->next;
@@ -228,6 +229,7 @@ get_iaddr_record(uintptr_t iaddr, FunctionType_t func_type, iaddr_table_t **tab)
     record->index = (*tab)->table_size++;
     record->next = *first_record;
     *first_record = record;
+
   }
 
   return record;
@@ -236,7 +238,7 @@ get_iaddr_record(uintptr_t iaddr, FunctionType_t func_type, iaddr_table_t **tab)
 // Add the given iaddr_record_t data to **tab.  Returns index of
 // iaddr.
 __attribute__((always_inline))
-int add_to_iaddr_table(iaddr_table_t **tab, uintptr_t iaddr, FunctionType_t func_type) {
+int32_t add_to_iaddr_table(iaddr_table_t **tab, uintptr_t iaddr, FunctionType_t func_type) {
 
   iaddr_record_t *record = get_iaddr_record(iaddr, func_type, tab);
   assert(NULL != record);
