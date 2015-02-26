@@ -9,6 +9,10 @@ CFLAGS += $(TOOL_CFLAGS)
 LDFLAGS += $(TOOL_LDFLAGS)
 LDLIBS += $(TOOL_LDLIBS)
 
+ifneq ($(BURDENING),)
+CFLAGS += -DBURDENING=$(BURDENING)
+endif
+
 ifeq ($(PARALLEL),1)
 CFLAGS += -DSERIAL_TOOL=0 -fcilkplus # -I SFMT-src-1.4.1/
 endif

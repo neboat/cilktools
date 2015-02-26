@@ -35,6 +35,10 @@
 #define TRACE_CALLS 0
 #endif
 
+#ifndef BURDENING
+#define BURDENING 0
+#endif
+
 #if SERIAL_TOOL
 #define GET_STACK(ex) ex
 #else
@@ -1006,6 +1010,8 @@ void cilk_spawn_or_continue(int in_continuation)
                 __builtin_extract_return_addr(__builtin_return_address(0))); );
     stack->in_user_code = true;
 
+    stack->bot->local_contin += BURDENING;
+
 #if COMPUTE_STRAND_DATA
     stack->strand_start
       = (uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0));
@@ -1190,7 +1196,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
   c_fn_frame_t *old_c_bottom = &(stack->c_stack[stack->c_tail]);
 
   stack->bot->prefix_spn += old_c_bottom->running_spn;
-  stack->bot->local_spn += stack->bot->local_contin;
+  stack->bot->local_spn += stack->bot->local_contin + BURDENING;
   old_c_bottom->running_wrk += old_c_bottom->local_wrk;
   stack->bot->prefix_spn += stack->bot->local_spn;
 
