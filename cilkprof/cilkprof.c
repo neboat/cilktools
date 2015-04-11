@@ -500,10 +500,11 @@ void cilk_tool_print(void) {
   assert(span_table_entries_read == strand_span_table->table_size);
 #endif  // COMPUTE_STRAND_DATA
 
-  fprintf(stderr, "work = %fs, span = %fs, parallelism = %f\n",
-	  work / (1000000000.0),
-	  span / (1000000000.0),
-	  work / (float)span);
+  print_work_span(work, span);
+  /* fprintf(stderr, "work = %f, span = %f, parallelism = %f\n", */
+  /*         work / (1000000000.0), */
+  /*         span / (1000000000.0), */
+  /*         work / (float)span); */
 
   /*
   fprintf(stderr, "%ld read, %d size\n", span_table_entries_read, span_table->table_size);
@@ -537,9 +538,9 @@ void cilk_tool_print(void) {
  * Hooks into runtime system.
  */
 
-void cilk_enter_begin(__cilkrts_stack_frame *sf, void* this_fn, void* rip)
+void cilk_enter_begin(uint32_t prop, __cilkrts_stack_frame *sf, void* this_fn, void* rip)
 {
-  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_begin(%p, %p) [ret %p]\n", sf, rip,
+  WHEN_TRACE_CALLS( fprintf(stderr, "cilk_enter_begin(%u, %p, %p) [ret %p]\n", prop, sf, rip,
                             __builtin_extract_return_addr(__builtin_return_address(0))); );
 
   /* fprintf(stderr, "worker %d entering %p\n", __cilkrts_get_worker_number(), sf); */
@@ -567,6 +568,9 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* this_fn, void* rip)
   cilkprof_stack_push(stack, SPAWNER);
 
   c_fn_frame_t *c_bottom = &(stack->c_stack[stack->c_tail]);
+
+  /* fprintf(stderr, "local_wrk %lu, running_wrk %lu, running_spn %lu\n", */
+  /*         c_bottom->local_wrk, c_bottom->running_wrk, c_bottom->running_spn); */
 
   uintptr_t cs = (uintptr_t)__builtin_extract_return_addr(rip);
   uintptr_t fn = (uintptr_t)this_fn;
@@ -700,11 +704,11 @@ void cilk_enter_end(__cilkrts_stack_frame *sf, void *rsp)
   begin_strand(stack);
 }
 
-void cilk_tool_c_function_enter(void *this_fn, void *rip)
+void cilk_tool_c_function_enter(uint32_t prop, void *this_fn, void *rip)
 {
   cilkprof_stack_t *stack = &(GET_STACK(ctx_stack));
 
-  WHEN_TRACE_CALLS( fprintf(stderr, "c_function_enter(%p, %p) [ret %p]\n", this_fn, rip,
+  WHEN_TRACE_CALLS( fprintf(stderr, "c_function_enter(%u, %p, %p) [ret %p]\n", prop, this_fn, rip,
      __builtin_extract_return_addr(__builtin_return_address(0))); );
 
   if(!TOOL_INITIALIZED) { // We are entering main.
@@ -1114,10 +1118,13 @@ void cilk_sync_end(__cilkrts_stack_frame *sf)
 
   c_fn_frame_t *c_bottom = &(stack->c_stack[stack->c_tail]);
 
-  c_bottom->running_spn += stack->bot->local_contin;
+  /* c_bottom->running_spn += stack->bot->local_contin; */
+
+  /* fprintf(stderr, "local_wrk %lu, running_wrk %lu, running_spn %lu\n", */
+  /*         c_bottom->local_wrk, c_bottom->running_wrk, c_bottom->running_spn); */
 
   /* if (stack->bot->lchild_spn > stack->bot->contin_spn) { */
-  if (stack->bot->lchild_spn > c_bottom->running_spn) {
+  if (stack->bot->lchild_spn > c_bottom->running_spn + stack->bot->local_contin) {
     stack->bot->prefix_spn += stack->bot->lchild_spn;
     // local_spn does not increase, because critical path goes through
     // spawned child.
@@ -1147,6 +1154,9 @@ void cilk_sync_end(__cilkrts_stack_frame *sf)
   clear_strand_hashtable(stack->bot->strand_lchild_table);
   clear_strand_hashtable(stack->bot->strand_contin_table);
 #endif
+
+  /* fprintf(stderr, "local_wrk %lu, running_wrk %lu, local_spn %lu, prefix_spn %lu\n", */
+  /*         c_bottom->local_wrk, c_bottom->running_wrk, stack->bot->local_spn, stack->bot->prefix_spn); */
 
   // can't be anything else; only SPAWNER have sync
   assert(SPAWNER == stack->bot->func_type); 
@@ -1204,6 +1214,9 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 #if COMPUTE_STRAND_DATA
   add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_contin_table));
 #endif
+
+  /* fprintf(stderr, "local_wrk %lu, running_wrk %lu, local_spn %lu, prefix_spn %lu\n", */
+  /*         old_c_bottom->local_wrk, old_c_bottom->running_wrk, stack->bot->local_spn, stack->bot->prefix_spn); */
 
   // Pop the stack
   old_bottom = cilkprof_stack_pop(stack);
@@ -1303,7 +1316,7 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 
     assert(HELPER != stack->bot->func_type);
 
-    if (c_bottom->running_spn + old_bottom->prefix_spn > stack->bot->lchild_spn) {
+    if (c_bottom->running_spn + stack->bot->local_contin + old_bottom->prefix_spn > stack->bot->lchild_spn) {
       // fprintf(stderr, "updating longest child\n");
       stack->bot->prefix_spn += c_bottom->running_spn;
       stack->bot->local_spn += stack->bot->local_contin;
