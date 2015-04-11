@@ -904,6 +904,12 @@ void cilk_tool_c_function_leave(void *rip)
   // TB: This assert can fail if the compiler does really aggressive
   // inlining.  See bfs compiled with -O3.
   /* assert(old_bottom->top_cs || !stack->bot->top_fn); */
+  cc_hashtable_t **dst_spn_table;
+  if (0 == stack->bot->lchild_spn) {
+    dst_spn_table = &(stack->bot->prefix_table);
+  } else {
+    dst_spn_table = &(stack->bot->contin_table);
+  }
   // Update work table
   if (top_cs) {
     uint32_t fn_index = stack->cs_status[new_bottom->cs_index].fn_index;
@@ -920,7 +926,7 @@ void cilk_tool_c_function_leave(void *rip)
                                       local_wrk);
     assert(add_success);
     /* fprintf(stderr, "adding to prefix table\n"); */
-    add_success = add_to_cc_hashtable(&(stack->bot->contin_table),
+    add_success = add_to_cc_hashtable(dst_spn_table/* &(stack->bot->contin_table) */,
                                       stack->c_tail == stack->fn_status[fn_index],
                                       cs_index,
 #ifndef NDEBUG
@@ -943,7 +949,7 @@ void cilk_tool_c_function_leave(void *rip)
                                             local_wrk);
     assert(add_success);
     /* fprintf(stderr, "adding to contin table\n"); */
-    add_success = add_local_to_cc_hashtable(&(stack->bot->contin_table),
+    add_success = add_local_to_cc_hashtable(dst_spn_table/* &(stack->bot->contin_table) */,
                                             cs_index,
 #ifndef NDEBUG
                                             old_bottom->rip,
@@ -1210,9 +1216,11 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
   old_c_bottom->running_wrk += old_c_bottom->local_wrk;
   stack->bot->prefix_spn += stack->bot->local_spn;
 
-  add_cc_hashtables(&(stack->bot->prefix_table), &(stack->bot->contin_table));
+  assert(cc_hashtable_is_empty(stack->bot->contin_table));
+
+  /* add_cc_hashtables(&(stack->bot->prefix_table), &(stack->bot->contin_table)); */
 #if COMPUTE_STRAND_DATA
-  add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_contin_table));
+  /* add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_contin_table)); */
 #endif
 
   /* fprintf(stderr, "local_wrk %lu, running_wrk %lu, local_spn %lu, prefix_spn %lu\n", */
@@ -1288,8 +1296,8 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
   }
 
   if (SPAWNER == old_bottom->func_type) {
-    // This is the case we are returning to a call, since a SPAWNER
-    // is always called by a spawn helper.
+    // This is the case we are returning to a call, since a spawn
+    // helper never calls a HELPER.
 
     assert(NULL != old_bottom->parent);
 
@@ -1297,7 +1305,12 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
     c_bottom->running_spn += old_bottom->prefix_spn;
     // Don't increment local_spn for new stack->bot.
     /* fprintf(stderr, "adding tables\n"); */
-    add_cc_hashtables(&(stack->bot->contin_table), &(old_bottom->prefix_table));
+    if (0 == stack->bot->lchild_spn) {
+      // No outstanding spawned children
+      add_cc_hashtables(&(stack->bot->prefix_table), &(old_bottom->prefix_table));
+    } else {
+      add_cc_hashtables(&(stack->bot->contin_table), &(old_bottom->prefix_table));
+    }
 #if COMPUTE_STRAND_DATA
     add_strand_hashtables(&(stack->bot->strand_contin_table), &(old_bottom->strand_prefix_table));
 #endif
