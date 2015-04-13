@@ -227,7 +227,7 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
                          uint64_t wrk, uint64_t spn,
                          uint64_t local_wrk, uint64_t local_spn) {
   
-  if (((0 == (*tab)->table_size) | (index >= (1 << (*tab)->lg_capacity))) &
+  if (((0 == (*tab)->table_size) || (index >= (1 << (*tab)->lg_capacity))) &&
        /* (1 << (*tab)->lg_capacity) < MIN_CAPACITY && */
       ((*tab)->list_size < MIN_CAPACITY * TABLE_CONSTANT)) {
     // If table does not reflect enough updates or new entry cannot be
@@ -345,7 +345,7 @@ bool add_local_to_cc_hashtable(cc_hashtable_t **tab,
 #endif
                                uint64_t local_wrk, uint64_t local_spn) {
 
-  if (((0 == (*tab)->table_size) | (index >= (1 << (*tab)->lg_capacity))) &
+  if (((0 == (*tab)->table_size) || (index >= (1 << (*tab)->lg_capacity))) &&
       /* (1 << (*tab)->lg_capacity) < MIN_CAPACITY && */
       ((*tab)->list_size < MIN_CAPACITY * TABLE_CONSTANT)) {
     // If table does not reflect enough updates or new entry cannot be
