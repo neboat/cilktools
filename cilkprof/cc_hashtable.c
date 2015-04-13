@@ -5,10 +5,6 @@
 #include <inttypes.h>
 #include <assert.h>
 
-#ifndef DEBUG_RESIZE
-#define DEBUG_RESIZE 0
-#endif
-
 /**
  * Method implementations
  */
@@ -109,6 +105,8 @@ static cc_hashtable_t* increase_cc_table_capacity(const cc_hashtable_t *tab) {
     new_lg_capacity = tab->lg_capacity + 1;
   }
   cc_hashtable_t *new_tab;
+
+  /* fprintf(stderr, "resizing table\n"); */
 
   new_tab = cc_hashtable_alloc(new_lg_capacity);
   size_t i = 0;

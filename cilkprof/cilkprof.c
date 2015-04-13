@@ -187,8 +187,8 @@ void cilk_tool_destroy(void) {
 #if COMPUTE_STRAND_DATA
     free_strand_hashtable(stack->strand_wrk_table);
 #endif
-    old_bottom->parent = stack->sf_free_list;
-    stack->sf_free_list = old_bottom;
+    old_bottom->parent = stack->helper_sf_free_list;
+    stack->helper_sf_free_list = old_bottom;
 
     // Actually free the entries of the free lists
     /* c_fn_frame_t *c_fn_frame = stack->c_fn_free_list; */
@@ -200,7 +200,7 @@ void cilk_tool_destroy(void) {
     /* } */
     /* stack->c_fn_free_list = NULL; */
 
-    cilkprof_stack_frame_t *free_frame = stack->sf_free_list;
+    cilkprof_stack_frame_t *free_frame = stack->helper_sf_free_list;
     cilkprof_stack_frame_t *next_free_frame;
     while (NULL != free_frame) {
       next_free_frame = free_frame->parent;
@@ -218,7 +218,24 @@ void cilk_tool_destroy(void) {
       free(free_frame);
       free_frame = next_free_frame;
     }
-    stack->sf_free_list = NULL;
+    stack->helper_sf_free_list = NULL;
+
+    free_frame = stack->spawner_sf_free_list;
+    while (NULL != free_frame) {
+      next_free_frame = free_frame->parent;
+      /* c_fn_frame_t *c_fn_frame = free_frame->c_fn_frame; */
+      /* assert(NULL == c_fn_frame->parent); */
+      /* free(c_fn_frame); */
+      free_cc_hashtable(free_frame->lchild_table);
+      free_cc_hashtable(free_frame->contin_table);
+#if COMPUTE_STRAND_DATA
+      free_strand_hashtable(free_frame->strand_lchild_table);
+      free_strand_hashtable(free_frame->strand_contin_table);
+#endif
+      free(free_frame);
+      free_frame = next_free_frame;
+    }
+    stack->spawner_sf_free_list = NULL;
 
     free(stack->cs_status);
     free(stack->fn_status);
@@ -904,12 +921,14 @@ void cilk_tool_c_function_leave(void *rip)
   // TB: This assert can fail if the compiler does really aggressive
   // inlining.  See bfs compiled with -O3.
   /* assert(old_bottom->top_cs || !stack->bot->top_fn); */
+
   cc_hashtable_t **dst_spn_table;
   if (0 == stack->bot->lchild_spn) {
     dst_spn_table = &(stack->bot->prefix_table);
   } else {
     dst_spn_table = &(stack->bot->contin_table);
   }
+
   // Update work table
   if (top_cs) {
     uint32_t fn_index = stack->cs_status[new_bottom->cs_index].fn_index;
@@ -1217,11 +1236,10 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
   stack->bot->prefix_spn += stack->bot->local_spn;
 
   assert(cc_hashtable_is_empty(stack->bot->contin_table));
-
-  /* add_cc_hashtables(&(stack->bot->prefix_table), &(stack->bot->contin_table)); */
-#if COMPUTE_STRAND_DATA
-  /* add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_contin_table)); */
-#endif
+/*   add_cc_hashtables(&(stack->bot->prefix_table), &(stack->bot->contin_table)); */
+/* #if COMPUTE_STRAND_DATA */
+/*   add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_contin_table)); */
+/* #endif */
 
   /* fprintf(stderr, "local_wrk %lu, running_wrk %lu, local_spn %lu, prefix_spn %lu\n", */
   /*         old_c_bottom->local_wrk, old_c_bottom->running_wrk, stack->bot->local_spn, stack->bot->prefix_spn); */
@@ -1305,36 +1323,56 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
     c_bottom->running_spn += old_bottom->prefix_spn;
     // Don't increment local_spn for new stack->bot.
     /* fprintf(stderr, "adding tables\n"); */
-    if (0 == stack->bot->lchild_spn) {
-      // No outstanding spawned children
-      add_cc_hashtables(&(stack->bot->prefix_table), &(old_bottom->prefix_table));
-    } else {
-      add_cc_hashtables(&(stack->bot->contin_table), &(old_bottom->prefix_table));
-    }
-#if COMPUTE_STRAND_DATA
-    add_strand_hashtables(&(stack->bot->strand_contin_table), &(old_bottom->strand_prefix_table));
-#endif
 
-    clear_cc_hashtable(old_bottom->prefix_table);
-    clear_cc_hashtable(old_bottom->lchild_table);
-    clear_cc_hashtable(old_bottom->contin_table);
+    assert(cc_hashtable_is_empty(old_bottom->contin_table));
+    assert(cc_hashtable_is_empty(old_bottom->lchild_table));
 #if COMPUTE_STRAND_DATA
-    clear_strand_hashtable(old_bottom->strand_prefix_table);
-    clear_strand_hashtable(old_bottom->strand_lchild_table);
-    clear_strand_hashtable(old_bottom->strand_contin_table);
+    assert(cc_hashtable_is_empty(old_bottom->contin_table));
+    assert(cc_hashtable_is_empty(old_bottom->lchild_table));
 #endif
+    // Need to reassign pointers, in case of table resize.
+    if (0 == stack->bot->lchild_spn) {
+      stack->bot->prefix_table = old_bottom->prefix_table;
+      /* assert(stack->bot->prefix_table == old_bottom->prefix_table); */
+      // No outstanding spawned children
+/*       add_cc_hashtables(&(stack->bot->prefix_table), &(old_bottom->prefix_table)); */
+/* #if COMPUTE_STRAND_DATA */
+/*       add_strand_hashtables(&(stack->bot->strand_prefix_table), &(old_bottom->strand_prefix_table)); */
+/* #endif */
+    } else {
+      stack->bot->contin_table = old_bottom->prefix_table;
+      /* assert(stack->bot->contin_table == old_bottom->prefix_table); */
+/*       add_cc_hashtables(&(stack->bot->contin_table), &(old_bottom->prefix_table)); */
+/* #if COMPUTE_STRAND_DATA */
+/*       add_strand_hashtables(&(stack->bot->strand_contin_table), &(old_bottom->strand_prefix_table)); */
+/* #endif */
+    }
+
+/*     /\* clear_cc_hashtable(old_bottom->prefix_table); *\/ */
+/*     clear_cc_hashtable(old_bottom->lchild_table); */
+/*     clear_cc_hashtable(old_bottom->contin_table); */
+/* #if COMPUTE_STRAND_DATA */
+/*     /\* clear_strand_hashtable(old_bottom->strand_prefix_table); *\/ */
+/*     clear_strand_hashtable(old_bottom->strand_lchild_table); */
+/*     clear_strand_hashtable(old_bottom->strand_contin_table); */
+/* #endif */
   } else {
     // This is the case we are returning to a spawn, since a HELPER 
     // is always invoked due to a spawn statement.
 
     assert(HELPER != stack->bot->func_type);
 
+    assert(cc_hashtable_is_empty(old_bottom->contin_table));
+    assert(cc_hashtable_is_empty(old_bottom->lchild_table));
+#if COMPUTE_STRAND_DATA
+    assert(cc_hashtable_is_empty(old_bottom->contin_table));
+    assert(cc_hashtable_is_empty(old_bottom->lchild_table));
+#endif
+
     if (c_bottom->running_spn + stack->bot->local_contin + old_bottom->prefix_spn > stack->bot->lchild_spn) {
       // fprintf(stderr, "updating longest child\n");
       stack->bot->prefix_spn += c_bottom->running_spn;
       stack->bot->local_spn += stack->bot->local_contin;
-      // This needs a better data structure to be implemented more
-      // efficiently.
       add_cc_hashtables(&(stack->bot->prefix_table), &(stack->bot->contin_table));
 #if COMPUTE_STRAND_DATA
       add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_contin_table));
@@ -1359,11 +1397,13 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 /*       stack->bot->strand_lchild_table = old_bottom->strand_prefix_table; */
 /* #endif */
       // Free old_bottom tables that are no longer in use
-      clear_cc_hashtable(old_bottom->lchild_table);
-      clear_cc_hashtable(old_bottom->contin_table);
+      assert(cc_hashtable_is_empty(old_bottom->prefix_table));
+      /* clear_cc_hashtable(old_bottom->lchild_table); */
+      /* clear_cc_hashtable(old_bottom->contin_table); */
 #if COMPUTE_STRAND_DATA
-      clear_strand_hashtable(old_bottom->strand_lchild_table);
-      clear_strand_hashtable(old_bottom->strand_contin_table);
+      assert(cc_hashtable_is_empty(old_bottom->strand_prefix_table));
+      /* clear_strand_hashtable(old_bottom->strand_lchild_table); */
+      /* clear_strand_hashtable(old_bottom->strand_contin_table); */
 #endif
 
       // Empy new bottom's continuation
@@ -1376,19 +1416,24 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
     } else {
       // Discared all tables from old_bottom
       clear_cc_hashtable(old_bottom->prefix_table);
-      clear_cc_hashtable(old_bottom->lchild_table);
-      clear_cc_hashtable(old_bottom->contin_table);
+      /* clear_cc_hashtable(old_bottom->lchild_table); */
+      /* clear_cc_hashtable(old_bottom->contin_table); */
 #if COMPUTE_STRAND_DATA
       clear_strand_hashtable(old_bottom->strand_prefix_table);
-      clear_strand_hashtable(old_bottom->strand_lchild_table);
-      clear_strand_hashtable(old_bottom->strand_contin_table);
+      /* clear_strand_hashtable(old_bottom->strand_lchild_table); */
+      /* clear_strand_hashtable(old_bottom->strand_contin_table); */
 #endif
     }
   }
 
   /* free(old_bottom); */
-  old_bottom->parent = stack->sf_free_list;
-  stack->sf_free_list = old_bottom;
+  if (SPAWNER == old_bottom->func_type) {
+    old_bottom->parent = stack->spawner_sf_free_list;
+    stack->spawner_sf_free_list = old_bottom;
+  } else {
+    old_bottom->parent = stack->helper_sf_free_list;
+    stack->helper_sf_free_list = old_bottom;
+  }
 }
 
 void cilk_leave_end(void)
