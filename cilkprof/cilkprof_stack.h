@@ -275,23 +275,24 @@ void cilkprof_stack_frame_init(cilkprof_stack_frame_t *frame,
     /* clear_strand_hashtable(frame->strand_prefix_table); */
     /* frame->strand_prefix_table = strand_hashtable_create(); */
 #endif
+  } else {
+    assert(cc_hashtable_is_empty(frame->lchild_table));
+    /* clear_cc_hashtable(frame->lchild_table); */
+    /* frame->lchild_table = cc_hashtable_create(); */
+#if COMPUTE_STRAND_DATA
+    assert(strand_hashtable_is_empty(frame->strand_lchild_table));
+    /* clear_strand_hashtable(frame->strand_lchild_table); */
+    /* frame->strand_lchild_table = strand_hashtable_create(); */
+#endif
+    assert(cc_hashtable_is_empty(frame->contin_table));
+    /* clear_cc_hashtable(frame->contin_table); */
+    /* frame->contin_table = cc_hashtable_create(); */
+#if COMPUTE_STRAND_DATA
+    assert(strand_hashtable_is_empty(frame->strand_contin_table));
+    /* clear_strand_hashtable(frame->strand_contin_table); */
+    /* frame->strand_contin_table = strand_hashtable_create(); */
+#endif
   }
-  assert(cc_hashtable_is_empty(frame->lchild_table));
-  /* clear_cc_hashtable(frame->lchild_table); */
-  /* frame->lchild_table = cc_hashtable_create(); */
-#if COMPUTE_STRAND_DATA
-  assert(strand_hashtable_is_empty(frame->strand_lchild_table));
-  /* clear_strand_hashtable(frame->strand_lchild_table); */
-  /* frame->strand_lchild_table = strand_hashtable_create(); */
-#endif
-  assert(cc_hashtable_is_empty(frame->contin_table));
-  /* clear_cc_hashtable(frame->contin_table); */
-  /* frame->contin_table = cc_hashtable_create(); */
-#if COMPUTE_STRAND_DATA
-  assert(strand_hashtable_is_empty(frame->strand_contin_table));
-  /* clear_strand_hashtable(frame->strand_contin_table); */
-  /* frame->strand_contin_table = strand_hashtable_create(); */
-#endif
 }
 
 
@@ -354,13 +355,17 @@ cilkprof_stack_push(cilkprof_stack_t *stack, FunctionType_t func_type)
 #if COMPUTE_STRAND_DATA
       new_frame->strand_prefix_table = strand_hashtable_create();
 #endif
-      new_frame->lchild_table = cc_hashtable_create();
+      new_frame->lchild_table = NULL;
+      /* new_frame->lchild_table = cc_hashtable_create(); */
 #if COMPUTE_STRAND_DATA
-      new_frame->strand_lchild_table = strand_hashtable_create();
+      new_frame->strand_lchild_table = NULL;
+      /* new_frame->strand_lchild_table = strand_hashtable_create(); */
 #endif
-      new_frame->contin_table = cc_hashtable_create();
+      new_frame->contin_table = NULL;
+      /* new_frame->contin_table = cc_hashtable_create(); */
 #if COMPUTE_STRAND_DATA
-      new_frame->strand_contin_table = strand_hashtable_create();
+      new_frame->strand_contin_table = NULL;
+      /* new_frame->strand_contin_table = strand_hashtable_create(); */
 #endif
     }
   } else {

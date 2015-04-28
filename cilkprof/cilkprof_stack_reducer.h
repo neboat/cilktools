@@ -8,7 +8,50 @@
 #include <cilk/cilk_api.h>
 #include <cilk/reducer.h>
 
+#include "iaddrs.h"
 #include "cilkprof_stack.h"
+
+// Worker-local structures:
+//   wrk_table
+//   call_site_table
+//   function_table
+//   c_stack
+//   cs_status
+//   fn_status
+//   helper_sf_free_list
+//   spawner_sf_free_list
+// Remaining structures in reducer
+typedef struct cilkprof_wls_t {
+  cc_hashtable_t *wrk_table;
+#if COMPUTE_STRAND_DATA
+  strand_hashtable_t *strand_wrk_table;
+#endif
+  iaddr_table_t *call_site_table;
+  iaddr_table_t *function_table;
+  c_fn_frame_t *c_stack;
+  cs_status_t *cs_status;
+  fn_status_t *fn_status;
+  cilkprof_stack_frame_t *helper_sf_free_list;
+  cilkprof_stack_frame_t *spawner_sf_free_list;  
+} cilkprof_wls_t;
+
+void cilkprof_wls_init(cilkprof_wls_t *wls) {
+  wls->wrk_table = cc_hashtable_create();
+#if COMPUTE_STRAND_DATA
+  wls->strand_wrk_table = strand_hashtable_create();
+#endif
+  wls->call_site_table = iaddr_table_create();
+  wls->function_table = iaddr_table_create();
+  wls->c_stack = (c_fn_frame_t*)malloc(sizeof(c_fn_frame_t) * START_C_STACK_SIZE);
+  wls->cs_status = (cs_status_t*)malloc(sizeof(cs_status_t)
+                                        * START_STATUS_VECTOR_SIZE);
+
+  wls->fn_status = (fn_status_t*)malloc(sizeof(fn_status_t)
+                                        * START_STATUS_VECTOR_SIZE);
+  wls->helper_sf_free_list = NULL;
+  wls->spawner_sf_free_list = NULL;
+}
+
 
 /* Identity method for cilkprof stack reducer */
 void identity_cilkprof_stack(void *reducer, void *view)
@@ -52,8 +95,8 @@ void reduce_cilkprof_stack(void *reducer, void *l, void *r)
   /* 	  right->wrk_table->table_size, */
   /* 	  right->wrk_table->lg_capacity); */
 
-  add_cc_hashtables(&(left->wrk_table), &(right->wrk_table));
-  clear_cc_hashtable(right->wrk_table);
+  /* add_cc_hashtables(&(left->wrk_table), &(right->wrk_table)); */
+  /* clear_cc_hashtable(right->wrk_table); */
 
   if (left->bot->contin_spn + right->bot->prefix_spn + right->bot->lchild_spn
       > left->bot->lchild_spn) {

@@ -39,6 +39,10 @@
 #define BURDENING 0
 #endif
 
+#ifndef PRINT_RES
+#define PRINT_RES 1
+#endif
+
 #if SERIAL_TOOL
 #define GET_STACK(ex) ex
 #else
@@ -66,6 +70,7 @@
 #if SERIAL_TOOL
 static cilkprof_stack_t ctx_stack;
 #else
+cilkprof_wls_t *wls;
 static CILK_C_DECLARE_REDUCER(cilkprof_stack_t) ctx_stack =
   CILK_C_INIT_REDUCER(cilkprof_stack_t,
 		      reduce_cilkprof_stack,
@@ -93,13 +98,18 @@ static inline void initialize_tool(cilkprof_stack_t *stack) {
 #if SERIAL_TOOL
   // This is a serial tool
   ensure_serial_tool();
+  call_site_table = iaddr_table_create();
+  function_table = iaddr_table_create();
 #else
+  int P = __cilkrts_get_nworkers();
+  wls = (cilkprof_wls_t*)malloc(sizeof(cilkprof_wls_t) * P);
+  for (int p = 0; p < P; ++p) {
+    cilkprof_wls_init(wls + p);
+  }
   // probably need to register the reducer here as well.
   CILK_C_REGISTER_REDUCER(ctx_stack);
 #endif
   cilkprof_stack_init(stack, MAIN);
-  call_site_table = iaddr_table_create();
-  function_table = iaddr_table_create();
   TOOL_INITIALIZED = true;
   TOOL_PRINTED = false;
 }
@@ -208,12 +218,12 @@ void cilk_tool_destroy(void) {
       /* assert(NULL == c_fn_frame->parent); */
       /* free(c_fn_frame); */
       free_cc_hashtable(free_frame->prefix_table);
-      free_cc_hashtable(free_frame->lchild_table);
-      free_cc_hashtable(free_frame->contin_table);
+      /* free_cc_hashtable(free_frame->lchild_table); */
+      /* free_cc_hashtable(free_frame->contin_table); */
 #if COMPUTE_STRAND_DATA
       free_strand_hashtable(free_frame->strand_prefix_table);
-      free_strand_hashtable(free_frame->strand_lchild_table);
-      free_strand_hashtable(free_frame->strand_contin_table);
+      /* free_strand_hashtable(free_frame->strand_lchild_table); */
+      /* free_strand_hashtable(free_frame->strand_contin_table); */
 #endif
       free(free_frame);
       free_frame = next_free_frame;
@@ -290,18 +300,21 @@ void cilk_tool_print(void) {
   flush_cc_hashtable(&(bottom->prefix_table));
 
   cc_hashtable_t* span_table = bottom->prefix_table;
-  fprintf(stderr, 
-          "span_table->list_size = %d, span_table->table_size = %d, span_table->lg_capacity = %d\n",
-  	  span_table->list_size, span_table->table_size, span_table->lg_capacity);
-
+/* #if PRINT_RES */
+/*   fprintf(stderr, */
+/*           "span_table->list_size = %d, span_table->table_size = %d, span_table->lg_capacity = %d\n", */
+/*   	  span_table->list_size, span_table->table_size, span_table->lg_capacity); */
+/* #endif */
 
   /* uint64_t work = stack->bot->c_fn_frame->running_wrk; */
   uint64_t work = c_bottom->running_wrk + c_bottom->local_wrk;
   flush_cc_hashtable(&(stack->wrk_table));
   cc_hashtable_t* work_table = stack->wrk_table;
-  fprintf(stderr, 
-          "work_table->list_size = %d, work_table->table_size = %d, work_table->lg_capacity = %d\n",
-  	  work_table->list_size, work_table->table_size, work_table->lg_capacity);
+/* #if PRINT_RES */
+/*   fprintf(stderr, */
+/*           "work_table->list_size = %d, work_table->table_size = %d, work_table->lg_capacity = %d\n", */
+/*   	  work_table->list_size, work_table->table_size, work_table->lg_capacity); */
+/* #endif */
 
   // Read the proc maps list
   read_proc_maps();
@@ -517,11 +530,9 @@ void cilk_tool_print(void) {
   assert(span_table_entries_read == strand_span_table->table_size);
 #endif  // COMPUTE_STRAND_DATA
 
+#if PRINT_RES
   print_work_span(work, span);
-  /* fprintf(stderr, "work = %f, span = %f, parallelism = %f\n", */
-  /*         work / (1000000000.0), */
-  /*         span / (1000000000.0), */
-  /*         work / (float)span); */
+#endif
 
   /*
   fprintf(stderr, "%ld read, %d size\n", span_table_entries_read, span_table->table_size);
@@ -929,6 +940,8 @@ void cilk_tool_c_function_leave(void *rip)
     dst_spn_table = &(stack->bot->contin_table);
   }
 
+  assert(NULL != dst_spn_table);
+
   // Update work table
   if (top_cs) {
     uint32_t fn_index = stack->cs_status[new_bottom->cs_index].fn_index;
@@ -1148,6 +1161,9 @@ void cilk_sync_end(__cilkrts_stack_frame *sf)
   /* fprintf(stderr, "local_wrk %lu, running_wrk %lu, running_spn %lu\n", */
   /*         c_bottom->local_wrk, c_bottom->running_wrk, c_bottom->running_spn); */
 
+  // can't be anything else; only SPAWNER have sync
+  assert(SPAWNER == stack->bot->func_type); 
+
   /* if (stack->bot->lchild_spn > stack->bot->contin_spn) { */
   if (stack->bot->lchild_spn > c_bottom->running_spn + stack->bot->local_contin) {
     stack->bot->prefix_spn += stack->bot->lchild_spn;
@@ -1183,8 +1199,6 @@ void cilk_sync_end(__cilkrts_stack_frame *sf)
   /* fprintf(stderr, "local_wrk %lu, running_wrk %lu, local_spn %lu, prefix_spn %lu\n", */
   /*         c_bottom->local_wrk, c_bottom->running_wrk, stack->bot->local_spn, stack->bot->prefix_spn); */
 
-  // can't be anything else; only SPAWNER have sync
-  assert(SPAWNER == stack->bot->func_type); 
   assert(!(stack->in_user_code));
   stack->in_user_code = true;
   WHEN_TRACE_CALLS( fprintf(stderr, "cilk_sync_end(%p) from SPAWNER [ret %p]\n", sf,
@@ -1221,11 +1235,17 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
   // that, lchild should be 0 / empty.  prefix could contain value,
   // however, if this function is a Cilk function that spawned before.
   assert(0 == stack->bot->lchild_spn);
-  assert(cc_hashtable_is_empty(stack->bot->lchild_table));
+  if (SPAWNER == stack->bot->func_type) {
+    assert(cc_hashtable_is_empty(stack->bot->lchild_table));
 #if COMPUTE_STRAND_DATA
-  assert(strand_hashtable_is_empty(stack->bot->strand_lchild_table));
+    assert(strand_hashtable_is_empty(stack->bot->strand_lchild_table));
 #endif
-
+  } else {
+    assert(NULL == stack->bot->lchild_table);
+#if COMPUTE_STRAND_DATA
+    assert(NULL == stack->bot->strand_lchild_table);
+#endif
+  }
   assert(stack->bot->c_head == stack->c_tail);
 
   c_fn_frame_t *old_c_bottom = &(stack->c_stack[stack->c_tail]);
@@ -1235,7 +1255,11 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
   old_c_bottom->running_wrk += old_c_bottom->local_wrk;
   stack->bot->prefix_spn += stack->bot->local_spn;
 
-  assert(cc_hashtable_is_empty(stack->bot->contin_table));
+  if (SPAWNER == stack->bot->func_type) {
+    assert(cc_hashtable_is_empty(stack->bot->contin_table));
+  } else {
+    assert(NULL == stack->bot->contin_table);
+  }
 /*   add_cc_hashtables(&(stack->bot->prefix_table), &(stack->bot->contin_table)); */
 /* #if COMPUTE_STRAND_DATA */
 /*   add_strand_hashtables(&(stack->bot->strand_prefix_table), &(stack->bot->strand_contin_table)); */
@@ -1362,11 +1386,15 @@ void cilk_leave_begin(__cilkrts_stack_frame *sf)
 
     assert(HELPER != stack->bot->func_type);
 
-    assert(cc_hashtable_is_empty(old_bottom->contin_table));
-    assert(cc_hashtable_is_empty(old_bottom->lchild_table));
+    assert(NULL == old_bottom->contin_table);
+    assert(NULL == old_bottom->lchild_table);
+    /* assert(cc_hashtable_is_empty(old_bottom->contin_table)); */
+    /* assert(cc_hashtable_is_empty(old_bottom->lchild_table)); */
 #if COMPUTE_STRAND_DATA
-    assert(cc_hashtable_is_empty(old_bottom->contin_table));
-    assert(cc_hashtable_is_empty(old_bottom->lchild_table));
+    assert(NULL == old_bottom->contin_table);
+    assert(NULL == old_bottom->lchild_table);
+    /* assert(cc_hashtable_is_empty(old_bottom->contin_table)); */
+    /* assert(cc_hashtable_is_empty(old_bottom->lchild_table)); */
 #endif
 
     if (c_bottom->running_spn + stack->bot->local_contin + old_bottom->prefix_spn > stack->bot->lchild_spn) {
