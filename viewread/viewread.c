@@ -71,10 +71,10 @@ void cilk_tool_print(void) {
   return;
 }
 
-void cilk_enter_begin(__cilkrts_stack_frame *sf, void* rip)
+void cilk_enter_begin(__cilkrts_stack_frame *sf, void *this_fn, void* rip)
 {
 #if TRACE_CALLS
-  fprintf(stderr, "cilk_enter_begin(%p, %p)\n", sf, rip);
+  fprintf(stderr, "cilk_enter_begin(%p, %p, %p)\n", sf, this_fn, rip);
 #endif
   /* fprintf(stderr, "worker %d entering %p\n", __cilkrts_get_worker_number(), sf); */
   viewread_stack_t *stack;
@@ -110,12 +110,12 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void* rip)
   /* stack->bot->rip = (uintptr_t)__builtin_extract_return_addr(rip); */
 }
 
-void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
+void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void* this_fn, void *rip)
 {
   viewread_stack_t *stack = &ctx_stack;
 
 #if TRACE_CALLS
-  fprintf(stderr, "cilk_enter_helper_begin(%p, %p) from CILK\n", sf, rip);
+  fprintf(stderr, "cilk_enter_helper_begin(%p, %%p, p) from CILK\n", sf, this_fn, rip);
 #endif
 
   assert(NULL != stack->bot);
@@ -144,7 +144,7 @@ void cilk_enter_end(__cilkrts_stack_frame *sf, void *rsp)
   stack->in_user_code = true;
 }
 
-void cilk_tool_c_function_enter(void *rip) {
+void cilk_tool_c_function_enter(void* this_fn, void *rip) {
 /* #if TRACE_CALLS */
 /*   fprintf(stderr, "c_function_enter(%p)\n", rip); */
 /* #endif */

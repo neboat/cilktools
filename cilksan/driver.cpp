@@ -5,8 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <tsan/rtl/tsan_interface.h>
-#include <tsan/rtl/tsan_interface_atomic.h>
+#include <sanitizer/tsan_interface_atomic.h>
+//#include <tsan/rtl/tsan_interface.h>
+//#include <tsan/rtl/tsan_interface_atomic.h>
 #include <unistd.h>
 
 // runtime internal abi
@@ -200,7 +201,7 @@ static void init_internal() {
     }
 }
 
-void __tsan_init() {
+extern "C" void __tsan_init() {
     // kind of a hack, but sometimes __tsan_init gets called twice ...
     if(TOOL_INITIALIZED) return;
 
@@ -214,7 +215,9 @@ void __tsan_init() {
 }
 
 // invoked whenever a function enters; no need for this
-void __tsan_func_entry(void *pc) { 
+extern "C" void __tsan_func_entry(void *pc) { 
+    //TODO remove this when it functions in the future
+    __tsan_init();
     cilksan_assert(TOOL_INITIALIZED);
     // DBG_TRACE(DEBUG_BASIC, "%s rip %p frame addr = %p\n", 
     //           __FUNCTION__, pc, __builtin_frame_address(0));
@@ -222,13 +225,13 @@ void __tsan_func_entry(void *pc) {
     // cilksan_do_function_entry((uint64_t)__builtin_frame_address(0));
 }
 
-void __tsan_func_exit() {
+extern "C" void __tsan_func_exit() {
     cilksan_assert(TOOL_INITIALIZED);
     // XXX Let's focus on Cilk function for now; maybe put it back later
     // cilksan_do_function_exit();
 }
 
-void __tsan_vptr_update(void **vptr_p, void *new_val) {
+extern "C" void __tsan_vptr_update(void **vptr_p, void *new_val) {
     // XXX: Not doing anything at the moment.
 }
 
@@ -286,51 +289,48 @@ static inline void tsan_write(void *addr, size_t size, void *rip) {
     }
 }
 
-void __tsan_read1(void *addr) {
+extern "C" void __tsan_vptr_read(void **vptr_p) {
+    return;
+}
+
+extern "C" void __tsan_read1(void *addr) {
     tsan_read(addr, 1, __builtin_return_address(0));
 }
 
-void __tsan_read2(void *addr) {
+extern "C" void __tsan_read2(void *addr) {
     tsan_read(addr, 2, __builtin_return_address(0));
 }
 
-void __tsan_read4(void *addr) {
+extern "C" void __tsan_read4(void *addr) {
     tsan_read(addr, 4, __builtin_return_address(0));
 }
 
-void __tsan_read8(void *addr) {
+extern "C" void __tsan_read8(void *addr) {
     tsan_read(addr, 8, __builtin_return_address(0));
 }
 
-void __tsan_read16(void *addr) {
+extern "C" void __tsan_read16(void *addr) {
     tsan_read(addr, 16, __builtin_return_address(0));
 }
 
-void __tsan_write1(void *addr) {
+extern "C" void __tsan_write1(void *addr) {
     tsan_write(addr, 1, __builtin_return_address(0));
 }
 
-void __tsan_write2(void *addr) {
+extern "C" void __tsan_write2(void *addr) {
     tsan_write(addr, 2, __builtin_return_address(0));
 }
 
-void __tsan_write4(void *addr) {
+extern "C" void __tsan_write4(void *addr) {
     tsan_write(addr, 4, __builtin_return_address(0));
 }
 
-void __tsan_write8(void *addr) {
+extern "C" void __tsan_write8(void *addr) {
     tsan_write(addr, 8, __builtin_return_address(0));
 }
 
-void __tsan_write16(void *addr) {
+extern "C" void __tsan_write16(void *addr) {
     tsan_write(addr, 16, __builtin_return_address(0));
-}
-
-extern "C"
-int __tsan_atomic32_fetch_add(volatile int *a, int v, __tsan_memory_order mo) {
-    // not doing anything right now
-    // fprintf(stderr, "XXX atomic fetch add called: int: %p, v %d, mo %d.\n", a, v, mo);
-  return 0;
 }
 
 typedef void*(*malloc_t)(size_t);

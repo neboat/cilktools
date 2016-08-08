@@ -3,8 +3,6 @@
 COMPILER ?= LLVM
 #COMPILER ?= GCC
 
-COMPILERS_HOME = $(HOME)/compilers
-
 CC = gcc
 CXX = g++
 BASIC_CFLAGS = -O1 -Wall -g
@@ -23,10 +21,9 @@ APP_LDFLAGS =
 APP_LDLIBS = -l:libcilkrts.a -lpthread -ldl
 
 ifeq ($(COMPILER),LLVM)
-#COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilk-ok
-COMPILER_ROOT = $(COMPILERS_HOME)/llvm-cilk
-CC = clang
-CXX = clang++
+COMPILER_ROOT = ~/git/Parallel-IR
+CC = $(COMPILER_ROOT)/build/bin/clang
+CXX = $(COMPILER_ROOT)/build/bin/clang++
 else ifeq ($(COMPILER),GCC)
 #COMPILER_ROOT = $(COMPILERS_HOME)/gcc-supertech
 COMPILER_ROOT = $(COMPILERS_HOME)/gcc

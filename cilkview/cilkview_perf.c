@@ -169,10 +169,10 @@ void cilk_tool_print(void) {
  * Hooks into runtime system.
  */
 
-void cilk_enter_begin(__cilkrts_stack_frame *sf, void *rip)
+void cilk_enter_begin(__cilkrts_stack_frame *sf, void *this_fn, void *rip)
 {
   cilkview_perf_stack_t *stack;
-  /* fprintf(stderr, "cilk_enter_begin(%p)\n", sf); */
+  /* fprintf(stderr, "cilk_enter_begin(%p, %p, %p)\n", sf, this_fn, rip); */
   /* fprintf(stderr, "worker %d entering %p\n", __cilkrts_get_worker_number(), sf); */
 
   if (!TOOL_INITIALIZED) {
@@ -216,7 +216,7 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void *rip)
   cilkview_perf_stack_push(stack, SPAWN);
 }
 
-void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
+void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *this_fn, void *rip)
 {
   /* cilkview_perf_stack_t *stack = &(REDUCER_VIEW(ctx_stack)); */
   cilkview_perf_stack_t *stack = &ctx_stack;
@@ -247,7 +247,7 @@ void cilk_enter_end(__cilkrts_stack_frame *sf, void *rsp)
   }
 }
 
-void cilk_tool_c_function_enter(void *rip) {
+void cilk_tool_c_function_enter(void *this_fn, void *rip) {
   /* fprintf(stderr, "C function enter %p.\n", rip); */
 }
 

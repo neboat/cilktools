@@ -22,8 +22,9 @@ enum debug_levels {
 };
 
 
+
 #if CILKSAN_DEBUG
-// static int debug_level = DEBUG_BAGS | DEBUG_CALLBACK | DEBUG_MEMORY | DEBUG_DEQUE | DEBUG_REDUCER;
+//static int debug_level = DEBUG_BAGS | DEBUG_CALLBACK | DEBUG_MEMORY | DEBUG_DEQUE | DEBUG_REDUCER;
 static int debug_level = DEBUG_REDUCER;
 #else
 static int debug_level = 0;

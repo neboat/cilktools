@@ -24,7 +24,7 @@
 #endif
 
 #ifndef TRACE_CALLS
-#define TRACE_CALLS 0
+#define TRACE_CALLS 1
 #endif
 
 /*************************************************************************/
@@ -142,11 +142,11 @@ void cilk_tool_print(void) {
  * Hooks into runtime system.
  */
 
-void cilk_enter_begin(__cilkrts_stack_frame *sf, void *rip)
+void cilk_enter_begin(__cilkrts_stack_frame *sf, void *this_fn, void *rip)
 {
   context_stack_t *stack;
 #if TRACE_CALLS
-  fprintf(stderr, "cilk_enter_begin(%p, %p)\n", sf, rip);
+  fprintf(stderr, "cilk_enter_begin(%p, %p, %p)\n", sf, this_fn, rip);
 #endif
   /* fprintf(stderr, "worker %d entering %p\n", __cilkrts_get_worker_number(), sf); */
 
@@ -205,7 +205,7 @@ void cilk_enter_begin(__cilkrts_stack_frame *sf, void *rip)
   context_stack_push(stack, SPAWN);
 }
 
-void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
+void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *this_fn, void *rip)
 {
   context_stack_t *stack;
 #if SERIAL_TOOL
@@ -215,7 +215,7 @@ void cilk_enter_helper_begin(__cilkrts_stack_frame *sf, void *rip)
 #endif
 
 #if TRACE_CALLS
-  fprintf(stderr, "cilk_enter_helper_begin(%p, %p)\n", sf, rip);
+  fprintf(stderr, "cilk_enter_helper_begin(%p, %p, %p)\n", sf, this_fn, rip);
 #endif
 
   stack->in_user_code = false;
@@ -257,9 +257,9 @@ void cilk_enter_end(__cilkrts_stack_frame *sf, void *rsp)
   gettime(&(stack->start));
 }
 
-void cilk_tool_c_function_enter(void *rip) {
+void cilk_tool_c_function_enter(void *this_fn, void *rip) {
 #if TRACE_CALLS
-  fprintf(stderr, "c_function_enter(%p)\n", rip);
+  fprintf(stderr, "c_function_enter(%p, %p)\n", this_fn, rip);
 #endif
 }
 
