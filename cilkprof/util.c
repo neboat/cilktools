@@ -16,7 +16,7 @@ mapping_list_t maps = { .head = NULL, .tail = NULL };
 // Ensure that this tool is run serially
 void ensure_serial_tool(void) {
   // assert(1 == __cilkrts_get_nworkers());
-  fprintf(stderr, "Forcing CILK_NWORKERS=1.\n");
+  /* fprintf(stderr, "Forcing CILK_NWORKERS=1.\n"); */
   char *e = getenv("CILK_NWORKERS");
   if (!e || 0!=strcmp(e, "1")) {
     // fprintf(err_io, "Setting CILK_NWORKERS to be 1\n");

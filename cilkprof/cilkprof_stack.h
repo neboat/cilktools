@@ -98,8 +98,8 @@ typedef struct cilkprof_stack_frame_t {
   // far
   uint64_t lchild_spn;
 
-  // The span of the continuation is stored in the running_spn
-  // variable in the topmost c_fn_frame
+  // The span of the continuation is stored in the running_spn + local_contin
+  // in the topmost c_fn_frame
 
   // Data associated with the function's prefix
   cc_hashtable_t* prefix_table;
@@ -189,8 +189,12 @@ typedef struct {
   /* // Free list of C function frames */
   /* c_fn_frame_t *c_fn_free_list; */
 
-  // Free list of cilkprof stack frames
-  cilkprof_stack_frame_t *sf_free_list;
+  // Free list of cilkprof stack frames for spawn helpers.  
+  cilkprof_stack_frame_t *helper_sf_free_list;
+
+  // Free list of cilkprof stack frames for spawners
+  cilkprof_stack_frame_t *spawner_sf_free_list;
+
 } cilkprof_stack_t;
 
 
@@ -262,30 +266,33 @@ void cilkprof_stack_frame_init(cilkprof_stack_frame_t *frame,
   frame->lchild_spn = 0;
   /* frame->contin_spn = 0; */
 
-  assert(cc_hashtable_is_empty(frame->prefix_table));
-  /* clear_cc_hashtable(frame->prefix_table); */
-  /* frame->prefix_table = cc_hashtable_create(); */
+  if (HELPER == func_type) {
+    assert(cc_hashtable_is_empty(frame->prefix_table));
+    /* clear_cc_hashtable(frame->prefix_table); */
+    /* frame->prefix_table = cc_hashtable_create(); */
 #if COMPUTE_STRAND_DATA
-  assert(strand_hashtable_is_empty(frame->strand_prefix_table));
-  /* clear_strand_hashtable(frame->strand_prefix_table); */
-  /* frame->strand_prefix_table = strand_hashtable_create(); */
+    assert(strand_hashtable_is_empty(frame->strand_prefix_table));
+    /* clear_strand_hashtable(frame->strand_prefix_table); */
+    /* frame->strand_prefix_table = strand_hashtable_create(); */
 #endif
-  assert(cc_hashtable_is_empty(frame->lchild_table));
-  /* clear_cc_hashtable(frame->lchild_table); */
-  /* frame->lchild_table = cc_hashtable_create(); */
+  } else {
+    assert(cc_hashtable_is_empty(frame->lchild_table));
+    /* clear_cc_hashtable(frame->lchild_table); */
+    /* frame->lchild_table = cc_hashtable_create(); */
 #if COMPUTE_STRAND_DATA
-  assert(strand_hashtable_is_empty(frame->strand_lchild_table));
-  /* clear_strand_hashtable(frame->strand_lchild_table); */
-  /* frame->strand_lchild_table = strand_hashtable_create(); */
+    assert(strand_hashtable_is_empty(frame->strand_lchild_table));
+    /* clear_strand_hashtable(frame->strand_lchild_table); */
+    /* frame->strand_lchild_table = strand_hashtable_create(); */
 #endif
-  assert(cc_hashtable_is_empty(frame->contin_table));
-  /* clear_cc_hashtable(frame->contin_table); */
-  /* frame->contin_table = cc_hashtable_create(); */
+    assert(cc_hashtable_is_empty(frame->contin_table));
+    /* clear_cc_hashtable(frame->contin_table); */
+    /* frame->contin_table = cc_hashtable_create(); */
 #if COMPUTE_STRAND_DATA
-  assert(strand_hashtable_is_empty(frame->strand_contin_table));
-  /* clear_strand_hashtable(frame->strand_contin_table); */
-  /* frame->strand_contin_table = strand_hashtable_create(); */
+    assert(strand_hashtable_is_empty(frame->strand_contin_table));
+    /* clear_strand_hashtable(frame->strand_contin_table); */
+    /* frame->strand_contin_table = strand_hashtable_create(); */
 #endif
+  }
 }
 
 
@@ -328,33 +335,75 @@ cilkprof_stack_frame_t*
 cilkprof_stack_push(cilkprof_stack_t *stack, FunctionType_t func_type)
 {
   cilkprof_stack_frame_t *new_frame;
-  if (NULL != stack->sf_free_list) {
-    new_frame = stack->sf_free_list;
-    stack->sf_free_list = stack->sf_free_list->parent;
+  if (HELPER == func_type || NULL == stack->bot) {
+    if (NULL != stack->helper_sf_free_list) {
+      new_frame = stack->helper_sf_free_list;
+      stack->helper_sf_free_list = stack->helper_sf_free_list->parent;
+    } else {
+      new_frame = (cilkprof_stack_frame_t *)malloc(sizeof(cilkprof_stack_frame_t));
+
+      /* c_fn_frame_t *new_c_frame; */
+      /* if (NULL != stack->c_fn_free_list) { */
+      /*   new_c_frame = stack->c_fn_free_list; */
+      /*   stack->c_fn_free_list = stack->c_fn_free_list->parent; */
+      /* } else { */
+      /*   new_c_frame = (c_fn_frame_t *)malloc(sizeof(c_fn_frame_t)); */
+      /* } */
+      /* new_frame->c_fn_frame = new_c_frame; */
+
+      new_frame->prefix_table = cc_hashtable_create();
+#if COMPUTE_STRAND_DATA
+      new_frame->strand_prefix_table = strand_hashtable_create();
+#endif
+      new_frame->lchild_table = NULL;
+      /* new_frame->lchild_table = cc_hashtable_create(); */
+#if COMPUTE_STRAND_DATA
+      new_frame->strand_lchild_table = NULL;
+      /* new_frame->strand_lchild_table = strand_hashtable_create(); */
+#endif
+      new_frame->contin_table = NULL;
+      /* new_frame->contin_table = cc_hashtable_create(); */
+#if COMPUTE_STRAND_DATA
+      new_frame->strand_contin_table = NULL;
+      /* new_frame->strand_contin_table = strand_hashtable_create(); */
+#endif
+    }
   } else {
-    new_frame = (cilkprof_stack_frame_t *)malloc(sizeof(cilkprof_stack_frame_t));
+    if (NULL != stack->spawner_sf_free_list) {
+      new_frame = stack->spawner_sf_free_list;
+      stack->spawner_sf_free_list = stack->spawner_sf_free_list->parent;
+    } else {
+      new_frame = (cilkprof_stack_frame_t *)malloc(sizeof(cilkprof_stack_frame_t));
 
-    /* c_fn_frame_t *new_c_frame; */
-    /* if (NULL != stack->c_fn_free_list) { */
-    /*   new_c_frame = stack->c_fn_free_list; */
-    /*   stack->c_fn_free_list = stack->c_fn_free_list->parent; */
-    /* } else { */
-    /*   new_c_frame = (c_fn_frame_t *)malloc(sizeof(c_fn_frame_t)); */
-    /* } */
-    /* new_frame->c_fn_frame = new_c_frame; */
+      /* c_fn_frame_t *new_c_frame; */
+      /* if (NULL != stack->c_fn_free_list) { */
+      /*   new_c_frame = stack->c_fn_free_list; */
+      /*   stack->c_fn_free_list = stack->c_fn_free_list->parent; */
+      /* } else { */
+      /*   new_c_frame = (c_fn_frame_t *)malloc(sizeof(c_fn_frame_t)); */
+      /* } */
+      /* new_frame->c_fn_frame = new_c_frame; */
 
-    new_frame->prefix_table = cc_hashtable_create();
+      new_frame->lchild_table = cc_hashtable_create();
 #if COMPUTE_STRAND_DATA
-    new_frame->strand_prefix_table = strand_hashtable_create();
+      new_frame->strand_lchild_table = strand_hashtable_create();
 #endif
-    new_frame->lchild_table = cc_hashtable_create();
+      new_frame->contin_table = cc_hashtable_create();
 #if COMPUTE_STRAND_DATA
-    new_frame->strand_lchild_table = strand_hashtable_create();
+      new_frame->strand_contin_table = strand_hashtable_create();
 #endif
-    new_frame->contin_table = cc_hashtable_create();
+    }
+    if (0 == stack->bot->lchild_spn) {
+      new_frame->prefix_table = stack->bot->prefix_table;
 #if COMPUTE_STRAND_DATA
-    new_frame->strand_contin_table = strand_hashtable_create();
+      new_frame->strand_prefix_table = stack->bot->strand_prefix_table;
 #endif
+    } else {
+      new_frame->prefix_table = stack->bot->contin_table;
+#if COMPUTE_STRAND_DATA
+      new_frame->strand_prefix_table = stack->bot->strand_contin_table;
+#endif
+    }
   }
 
   cilkprof_c_fn_push(stack);
@@ -374,7 +423,8 @@ void cilkprof_stack_init(cilkprof_stack_t *stack, FunctionType_t func_type)
 {
   stack->in_user_code = false;
   stack->bot = NULL;
-  stack->sf_free_list = NULL;
+  stack->helper_sf_free_list = NULL;
+  stack->spawner_sf_free_list = NULL;
   /* stack->c_fn_free_list = NULL; */
 
   stack->c_stack = (c_fn_frame_t*)malloc(sizeof(c_fn_frame_t) * START_C_STACK_SIZE);

@@ -26,4 +26,9 @@ static inline uint64_t measure_strand_length(strand_ruler_t *strand_ruler) {
   return 1;
 }
 
+static inline void print_work_span(uint64_t work, uint64_t span) {
+  fprintf(stderr, "work %lu strands, span %lu strands, parallelism %f\n",
+          work, span, work / (float)span);
+}
+
 #endif

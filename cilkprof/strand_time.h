@@ -46,4 +46,11 @@ static inline uint64_t measure_strand_length(strand_ruler_t *strand_ruler) {
   return elapsed_nsec(&(strand_ruler->start), &(strand_ruler->stop));
 }
 
+static inline void print_work_span(uint64_t work, uint64_t span) {
+  fprintf(stderr, "work %fs, span %fs, parallelism %f\n",
+          work / (1000000000.0),
+          span / (1000000000.0),
+          work / (float)span);
+}
+
 #endif

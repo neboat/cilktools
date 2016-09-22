@@ -5,10 +5,6 @@
 #include <inttypes.h>
 #include <assert.h>
 
-#ifndef DEBUG_RESIZE
-#define DEBUG_RESIZE 0
-#endif
-
 /**
  * Method implementations
  */
@@ -109,6 +105,8 @@ static cc_hashtable_t* increase_cc_table_capacity(const cc_hashtable_t *tab) {
     new_lg_capacity = tab->lg_capacity + 1;
   }
   cc_hashtable_t *new_tab;
+
+  /* fprintf(stderr, "resizing table\n"); */
 
   new_tab = cc_hashtable_alloc(new_lg_capacity);
   size_t i = 0;
@@ -229,11 +227,12 @@ bool add_to_cc_hashtable(cc_hashtable_t **tab,
                          uint64_t wrk, uint64_t spn,
                          uint64_t local_wrk, uint64_t local_spn) {
   
-  if (index >= (1 << (*tab)->lg_capacity) &&
-      /* (1 << (*tab)->lg_capacity) < MIN_CAPACITY && */
-      (*tab)->list_size < MIN_CAPACITY * TABLE_CONSTANT) {
-    // If the table_size + list_size is sufficiently small, add entry
-    // to linked list.
+  if (((0 == (*tab)->table_size) || (index >= (1 << (*tab)->lg_capacity))) &&
+       /* (1 << (*tab)->lg_capacity) < MIN_CAPACITY && */
+      ((*tab)->list_size < MIN_CAPACITY * TABLE_CONSTANT)) {
+    // If table does not reflect enough updates or new entry cannot be
+    // placed in existing table and we're not ready to resize the
+    // table, add entry to linked list.
     cc_hashtable_list_el_t *lst_entry;
     if (NULL != ll_free_list) {
       lst_entry = ll_free_list;
@@ -346,11 +345,12 @@ bool add_local_to_cc_hashtable(cc_hashtable_t **tab,
 #endif
                                uint64_t local_wrk, uint64_t local_spn) {
 
-  if (index >= (1 << (*tab)->lg_capacity) &&
+  if (((0 == (*tab)->table_size) || (index >= (1 << (*tab)->lg_capacity))) &&
       /* (1 << (*tab)->lg_capacity) < MIN_CAPACITY && */
-      (*tab)->list_size < MIN_CAPACITY * TABLE_CONSTANT) {
-    // If the table_size + list_size is sufficiently small, add entry
-    // to linked list.
+      ((*tab)->list_size < MIN_CAPACITY * TABLE_CONSTANT)) {
+    // If table does not reflect enough updates or new entry cannot be
+    // placed in existing table and we're not ready to resize the
+    // table, add entry to linked list.
     cc_hashtable_list_el_t *lst_entry;
     if (NULL != ll_free_list) {
       lst_entry = ll_free_list;
